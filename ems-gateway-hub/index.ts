@@ -28,8 +28,12 @@ interface AddonConfig {
 function loadConfig(): AddonConfig {
   // HA Add-ons receive options via /data/options.json
   const optionsPath = "/data/options.json";
-  if (fs.existsSync(optionsPath)) {
-    return JSON.parse(fs.readFileSync(optionsPath, "utf-8"));
+  try {
+    if (fs.existsSync(optionsPath)) {
+      return JSON.parse(fs.readFileSync(optionsPath, "utf-8")) as AddonConfig;
+    }
+  } catch (error) {
+    console.warn("[config] Failed to read /data/options.json, falling back to environment variables:", error);
   }
   // Fallback: environment variables (for standalone Docker testing)
   return {
@@ -138,7 +142,7 @@ async function fetchMeterMappings(): Promise<void> {
       console.error(`[mapping] Failed to fetch meters: ${res.status}`);
       return;
     }
-    const data = await res.json();
+    const data = await res.json() as { success?: boolean; meters?: any[] };
     if (data.success && Array.isArray(data.meters)) {
       meterMappings = data.meters
         .filter((m: any) => m.sensor_uuid && m.capture_type === "automatic")
@@ -174,7 +178,7 @@ async function pollHAStates(): Promise<void> {
       return;
     }
 
-    const states: HAState[] = await res.json();
+    const states: HAState[] = await res.json() as HAState[];
     let buffered = 0;
 
     for (const state of states) {
@@ -243,7 +247,7 @@ async function flushBuffer(): Promise<void> {
     if (res.ok) {
       const lastId = rows[rows.length - 1].id;
       deleteBatch.run(lastId);
-      const result = await res.json();
+      const result = await res.json() as { inserted?: number };
       console.log(`[flush] Sent ${readings.length} readings, inserted: ${result.inserted}`);
     } else {
       console.warn(`[flush] Cloud returned ${res.status} – keeping readings in buffer`);
@@ -264,7 +268,7 @@ async function fetchHAVersion(): Promise<void> {
       headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
     });
     if (res.ok) {
-      const data = await res.json();
+      const data = await res.json() as { version?: string };
       haVersion = data.version || "unknown";
     }
   } catch { /* ignore */ }
@@ -295,7 +299,7 @@ async function sendHeartbeat(): Promise<void> {
     });
 
     if (res.ok) {
-      const data = await res.json();
+      const data = await res.json() as { latest_available_version?: string };
       // Check for pending commands from the cloud
       if (data.latest_available_version && data.latest_available_version !== "1.0.0") {
         console.log(`[heartbeat] Update available: ${data.latest_available_version}`);
