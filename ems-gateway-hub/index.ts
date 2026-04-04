@@ -914,7 +914,7 @@ async function sendHeartbeat(): Promise<void> {
         device_name: config.device_name,
         device_type: "aicono-ems",
         tenant_id: config.tenant_id,
-        local_ip: getLocalIP(),
+        local_ip: await getLocalIP(),
         ha_version: haVersion,
         addon_version: ADDON_VERSION,
         offline_buffer_count: getBufferCount(),
@@ -931,9 +931,18 @@ async function sendHeartbeat(): Promise<void> {
 
     if (res.ok) {
       markCloudReachable();
-      const data = await res.json() as { latest_available_version?: string };
+      const data = await res.json() as {
+        latest_available_version?: string;
+        pending_command?: string;
+        pending_command_params?: Record<string, unknown>;
+      };
       if (data.latest_available_version && data.latest_available_version !== ADDON_VERSION) {
         console.log(`[heartbeat] Update available: ${data.latest_available_version}`);
+      }
+      // Process pending commands from cloud
+      if (data.pending_command) {
+        console.log(`[heartbeat] Received pending command: ${data.pending_command}`);
+        await executePendingCommand(data.pending_command, data.pending_command_params || {});
       }
     } else {
       markCloudUnreachable();
@@ -945,7 +954,49 @@ async function sendHeartbeat(): Promise<void> {
   }
 }
 
-function getLocalIP(): string {
+let cachedHostIP: string | null = null;
+
+async function getLocalIP(): Promise<string> {
+  // Try cached value first (refresh every heartbeat cycle anyway)
+  if (cachedHostIP) return cachedHostIP;
+
+  // Use HA Supervisor API to get actual host LAN IP
+  try {
+    const token = process.env.SUPERVISOR_TOKEN;
+    if (token) {
+      const res = await fetch("http://supervisor/network/info", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json() as any;
+        const ifaces = data?.data?.interfaces;
+        if (Array.isArray(ifaces)) {
+          for (const iface of ifaces) {
+            if (iface.enabled && iface.type === "ethernet") {
+              const ipv4 = iface.ipv4?.address?.[0];
+              if (ipv4) {
+                // Format is "192.168.1.100/24" – strip CIDR suffix
+                cachedHostIP = ipv4.split("/")[0];
+                return cachedHostIP;
+              }
+            }
+          }
+          // Fallback: try wifi or any enabled interface
+          for (const iface of ifaces) {
+            if (iface.enabled) {
+              const ipv4 = iface.ipv4?.address?.[0];
+              if (ipv4) {
+                cachedHostIP = ipv4.split("/")[0];
+                return cachedHostIP;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch { /* Supervisor API not available */ }
+
+  // Final fallback: container IP via os.networkInterfaces()
   try {
     const os = require("os");
     const interfaces = os.networkInterfaces();
@@ -956,6 +1007,65 @@ function getLocalIP(): string {
     }
   } catch { /* ignore */ }
   return "unknown";
+}
+
+/* ── Remote Command Execution ─────────────────────────────────────────────────── */
+
+async function executePendingCommand(command: string, params: Record<string, unknown>): Promise<void> {
+  console.log(`[command] Executing remote command: ${command}`);
+  try {
+    switch (command) {
+      case "backup":
+        await sendBackup();
+        console.log("[command] Backup completed successfully");
+        break;
+
+      case "restart":
+        console.log("[command] Restart requested – restarting add-on in 3 seconds...");
+        // Send a final heartbeat to confirm receipt, then restart via Supervisor API
+        setTimeout(async () => {
+          try {
+            const addonSlug = process.env.HOSTNAME || "local_aicono_ems_gateway";
+            const res = await fetch(`http://supervisor/addons/${addonSlug}/restart`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
+            });
+            if (!res.ok) {
+              console.error(`[command] Restart API returned ${res.status}`);
+              // Fallback: exit process (container orchestrator will restart)
+              process.exit(0);
+            }
+          } catch (err) {
+            console.error("[command] Restart via Supervisor failed, forcing exit:", err);
+            process.exit(0);
+          }
+        }, 3000);
+        break;
+
+      case "update":
+        console.log("[command] Update command received – triggering add-on update via Supervisor...");
+        try {
+          const addonSlug = process.env.HOSTNAME || "local_aicono_ems_gateway";
+          const res = await fetch(`http://supervisor/addons/${addonSlug}/update`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
+          });
+          if (res.ok) {
+            console.log("[command] Update triggered successfully");
+          } else {
+            console.error(`[command] Update API returned ${res.status}: ${await res.text()}`);
+          }
+        } catch (err) {
+          console.error("[command] Update via Supervisor failed:", err);
+        }
+        break;
+
+      default:
+        console.warn(`[command] Unknown command: ${command}`);
+    }
+  } catch (err) {
+    console.error(`[command] Error executing command '${command}':`, err);
+  }
 }
 
 /* ── Auto Backup ─────────────────────────────────────────────────────────────── */
