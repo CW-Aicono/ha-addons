@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AICONO EMS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0f1a'/%3E%3Cpath d='M16 6l8 14H8z' fill='%2314b8a6'/%3E%3Ccircle cx='16' cy='24' r='3' fill='%2314b8a6'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg-primary: #0a0f1a;
+      --bg-card: #111827;
+      --bg-card-hover: #162132;
+      --border: #1e2d3d;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-teal: #14b8a6;
+      --accent-teal-dim: rgba(20, 184, 166, 0.14);
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --accent-yellow: #eab308;
+      --accent-blue: #3b82f6;
+      --accent-purple: #a855f7;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top right, rgba(20, 184, 166, 0.12), transparent 26%),
+        linear-gradient(180deg, #0a0f1a 0%, #0c1320 100%);
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { border: 0; }
+    code { font-family: "SFMono-Regular", Consolas, monospace; }
+
+    .container {
+      width: min(1200px, calc(100% - 24px));
+      margin: 0 auto;
+      padding: 18px 0 28px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 18px 0 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+    }
+
+    .header-subtitle {
+      margin-top: 6px;
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+    }
+
+    .header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.9);
+      padding: 7px 12px;
+      border-radius: 999px;
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      display: inline-block;
+      background: var(--text-muted);
+    }
+
+    .status-dot.online {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.75);
+    }
+
+    .status-dot.offline {
+      background: var(--accent-red);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.75);
+    }
+
+    .nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+
+    .nav-btn, .action-btn {
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 9px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .nav-btn:hover, .action-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-primary);
+      border-color: rgba(20, 184, 166, 0.35);
+    }
+
+    .nav-btn.active {
+      background: var(--accent-teal-dim);
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
+      font-weight: 700;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .muted {
+      color: var(--text-muted);
+      font-size: 0.86rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .card, .panel {
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .card {
+      padding: 20px;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .card-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .card-sub {
+      color: var(--text-secondary);
+      font-size: 0.84rem;
+      margin-top: 8px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border-radius: 10px;
+      border: 1px solid rgba(30, 45, 61, 0.7);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 620px;
+      background: rgba(10, 15, 26, 0.45);
+    }
+
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(30, 45, 61, 0.75);
+      font-size: 0.88rem;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(17, 24, 39, 0.98);
+      position: sticky;
+      top: 0;
+    }
+
+    td {
+      color: var(--text-secondary);
+      vertical-align: top;
+    }
+
+    tbody tr:hover td {
+      background: rgba(20, 184, 166, 0.04);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+    }
+
+    .badge-success { background: rgba(34, 197, 94, 0.15); color: var(--accent-green); }
+    .badge-error { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+    .badge-warn { background: rgba(234, 179, 8, 0.14); color: var(--accent-yellow); }
+    .badge-active { background: var(--accent-teal-dim); color: var(--accent-teal); }
+    .badge-inactive { background: rgba(100, 116, 139, 0.15); color: var(--text-muted); }
+    .badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+    .badge-purple { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
+
+    .empty-state, .error-state {
+      padding: 52px 24px;
+      text-align: center;
+      border: 1px dashed rgba(30, 45, 61, 0.9);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.75);
+    }
+
+    .empty-state .icon, .error-state .icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+
+    .empty-state p + p, .error-state p + p {
+      margin-top: 8px;
+    }
+
+    .error-state {
+      border-color: rgba(239, 68, 68, 0.38);
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .control-tile {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.92);
+      box-shadow: var(--shadow);
+    }
+
+    .control-info { min-width: 0; flex: 1; }
+    .control-name { font-weight: 700; color: var(--text-primary); }
+    .control-entity {
+      margin-top: 6px;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      word-break: break-all;
+    }
+    .control-state { margin-top: 6px; font-size: 0.84rem; }
+    .control-state.on { color: var(--accent-green); }
+    .control-state.off { color: var(--text-muted); }
+    .control-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .ctrl-btn {
+      background: var(--bg-card-hover);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 8px 11px;
+      border-radius: 10px;
+      cursor: pointer;
+      min-width: 54px;
+      transition: 0.18s ease;
+    }
+
+    .ctrl-btn:hover:not(:disabled) {
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
+      background: var(--accent-teal-dim);
+    }
+
+    .ctrl-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .ctrl-btn.active-on {
+      border-color: var(--accent-green);
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--accent-green);
+    }
+
+    .config-list {
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .config-list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(30, 45, 61, 0.7);
+    }
+
+    .config-list li:last-child {
+      border-bottom: none;
+    }
+
+    .config-key {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      text-transform: capitalize;
+    }
+
+    .config-val {
+      color: var(--text-primary);
+      font-size: 0.84rem;
+      text-align: right;
+      word-break: break-word;
+      max-width: 60%;
+    }
+
+    .footer {
+      margin-top: 26px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      text-align: center;
+    }
+
+    /* ── Devices Page ── */
+    .device-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .device-tab {
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: 0.18s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .device-tab:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-primary);
+    }
+
+    .device-tab.active {
+      background: var(--accent-teal-dim);
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
+      font-weight: 700;
+    }
+
+    .device-tab .count {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .device-tab.active .count {
+      background: rgba(20, 184, 166, 0.25);
+    }
+
+    .search-box {
+      width: 100%;
+      max-width: 360px;
+      padding: 9px 14px;
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-box:focus {
+      border-color: var(--accent-teal);
+    }
+
+    .search-box::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* ── Automation Flow ── */
+    .auto-card {
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .auto-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .auto-name {
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--text-primary);
+    }
+
+    .auto-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .auto-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      overflow-x: auto;
+      padding: 4px 0;
+    }
+
+    .flow-block {
+      flex: 0 0 auto;
+      min-width: 160px;
+      max-width: 240px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+    }
+
+    .flow-conditions {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .flow-operator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 50px;
+      max-width: 50px;
+      color: var(--text-muted);
+      font-weight: 800;
+      font-size: 0.82rem;
+    }
+
+    .flow-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 40px;
+      max-width: 40px;
+      color: var(--text-muted);
+      font-size: 1.1rem;
+    }
+
+    .flow-actions {
+      background: rgba(20, 184, 166, 0.1);
+      border: 1px solid rgba(20, 184, 166, 0.3);
+    }
+
+    .flow-block-title {
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+
+    .flow-conditions .flow-block-title { color: var(--accent-blue); }
+    .flow-actions .flow-block-title { color: var(--accent-teal); }
+
+    .flow-item {
+      padding: 4px 0;
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .flow-item + .flow-item {
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .auto-footer {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(30, 45, 61, 0.5);
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 720px) {
+      .header, .toolbar, .control-tile {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .header-meta,
+      .control-btns {
+        justify-content: flex-start;
+      }
+
+      .config-list li {
+        flex-direction: column;
+      }
+
+      .config-val { max-width: 100%; text-align: left; }
+      .container { width: min(100% - 16px, 1200px); }
+      .auto-flow { flex-direction: column; }
+      .flow-operator, .flow-arrow { min-width: unset; max-width: unset; min-height: 30px; }
+    }
+
+    /* Login screen */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .login-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      width: min(360px, calc(100vw - 32px));
+      text-align: center;
+    }
+    .login-box h2 {
+      margin-bottom: 8px;
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+    .login-box p {
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+      margin-bottom: 20px;
+    }
+    .pin-inputs {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .pin-inputs input {
+      width: 48px;
+      height: 56px;
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      background: var(--bg-primary);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.2s;
+      -moz-appearance: textfield;
+    }
+    .pin-inputs input::-webkit-inner-spin-button,
+    .pin-inputs input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .pin-inputs input:focus {
+      border-color: var(--accent-teal);
+      box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
+    }
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent-teal);
+      color: #fff;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+    }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .login-btn:hover:not(:disabled) { opacity: 0.9; }
+    .login-error {
+      color: var(--accent-red);
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="app">
+    <div class="empty-state">
+      <div class="icon">⏳</div>
+      <p>Initialisiere AICONO EMS…</p>
+      <p class="muted">Die lokale Oberfläche wird geladen.</p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var app = document.getElementById('app');
+      var state = {
+        page: 'dashboard',
+        status: null,
+        version: null,
+        config: null,
+        sensors: [],
+        actuators: [],
+        automations: [],
+        logs: [],
+        devices: null,
+        deviceTab: 'meters',
+        deviceSearch: '',
+        error: '',
+        busyEntity: '',
+        lastUpdated: null
+      };
+      var pageLabels = {
+        dashboard: '📊 Dashboard',
+        devices: '🔧 Geräte',
+        control: '🔌 Steuerung',
+        automations: '🤖 Automationen',
+        logs: '🧾 Logs',
+        config: '⚙️ Konfiguration'
+      };
+      var refreshHandle = null;
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function renderFatal(title, detail) {
+        app.innerHTML = '' +
+          '<div class="error-state">' +
+            '<div class="icon">⚠️</div>' +
+            '<p><strong>' + escapeHtml(title) + '</strong></p>' +
+            '<p>' + escapeHtml(detail || 'Unbekannter Fehler') + '</p>' +
+          '</div>';
+      }
+
+      window.addEventListener('error', function (event) {
+        renderFatal('JavaScript-Fehler', event && event.message ? event.message : 'Die lokale UI konnte nicht gestartet werden.');
+      });
+
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && event.reason;
+        renderFatal('Ladefehler', reason && reason.message ? reason.message : String(reason || 'Unbekannter Fehler'));
+      });
+
+      function getIngressBase() {
+        var pathname = window.location.pathname || '/';
+        var match = pathname.match(/^(.*\/api\/(?:hassio_)?ingress\/[^/]+)/);
+        if (match) return match[1];
+        return '';
+      }
+
+      function buildApiCandidates(endpoint) {
+        var clean = String(endpoint || '').replace(/^\/+/, '');
+        var pathname = window.location.pathname || '/';
+        var ingressBase = getIngressBase();
+        var candidates = [];
+
+        function push(value) {
+          if (value && candidates.indexOf(value) === -1) candidates.push(value);
+        }
+
+        if (ingressBase) push(ingressBase + '/' + clean);
+        if (pathname && pathname !== '/') push(pathname.replace(/\/$/, '') + '/' + clean);
+        push('/' + clean);
+        push('./' + clean);
+        push('../' + clean);
+
+        if (/\/ui(?:\/index\.html)?\/?$/.test(pathname)) {
+          push(pathname.replace(/\/ui(?:\/index\.html)?\/?$/, '') + '/' + clean);
+        }
+
+        if (pathname === '/' || pathname === '/index.html') {
+          push('./' + clean);
+        }
+
+        return candidates;
+      }
+
+      async function fetchJson(endpoint, options) {
+        var urls = buildApiCandidates(endpoint);
+        var lastError = null;
+
+        for (var i = 0; i < urls.length; i += 1) {
+          var url = urls[i];
+          try {
+            var response = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
+            var contentType = response.headers.get('content-type') || '';
+            if (response.status === 401) {
+              showLoginScreen();
+              throw new Error('PIN erforderlich');
+            }
+            if (!response.ok) {
+              lastError = new Error('HTTP ' + response.status + ' bei ' + url);
+              continue;
+            }
+            if (contentType.indexOf('application/json') === -1) {
+              var text = await response.text();
+              lastError = new Error('Keine JSON-Antwort von ' + url + ': ' + text.slice(0, 120));
+              continue;
+            }
+            return await response.json();
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        throw lastError || new Error('API nicht erreichbar');
+      }
+
+      function formatTime(value) {
+        if (!value) return '–';
+        try {
+          return new Date(value).toLocaleString('de-DE', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+          });
+        } catch (error) {
+          return String(value);
+        }
+      }
+
+      function formatTimeShort(value) {
+        if (!value) return '–';
+        try {
+          return new Date(value).toLocaleString('de-DE', {
+            day: '2-digit', month: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+          });
+        } catch (error) {
+          return String(value);
+        }
+      }
+
+      function formatUptime(seconds) {
+        var total = Number(seconds || 0);
+        var h = Math.floor(total / 3600);
+        var m = Math.floor((total % 3600) / 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        return m + 'm';
+      }
+
+      function renderDashboard() {
+        if (!state.status) {
+          return '<div class="empty-state"><div class="icon">⏳</div><p>Lade Status…</p></div>';
+        }
+
+        return '' +
+          '<div class="grid">' +
+            card('Status', '<span class="status-dot ' + (state.status.status === 'running' ? 'online' : 'offline') + '"></span> ' + (state.status.status === 'running' ? 'Online' : 'Offline'), 'Uptime: ' + escapeHtml(formatUptime(state.status.uptime_seconds))) +
+            card('Cloud-Verbindung', '<span class="status-dot ' + (state.status.cloud_reachable ? 'online' : 'offline') + '"></span> ' + (state.status.cloud_reachable ? 'Verbunden' : 'Offline'), 'WebSocket: ' + (state.status.ha_ws_connected ? '✓ aktiv' : '✗ getrennt')) +
+            card('Messwert-Puffer', escapeHtml(state.status.buffer_count || 0), 'Readings im lokalen Speicher') +
+            card('Zähler-Mappings', escapeHtml(state.status.meter_mappings || 0), 'Aktive Zuordnungen') +
+            card('Automationen', escapeHtml(state.status.automation_count || 0), 'Lokal gespeicherte Regeln') +
+            card('System', escapeHtml(state.status.ha_version || 'N/A'), 'Gateway v' + escapeHtml(state.status.addon_version || '?')) +
+          '</div>';
+      }
+
+      function card(label, value, sub) {
+        return '' +
+          '<div class="card">' +
+            '<div class="card-label">' + escapeHtml(label) + '</div>' +
+            '<div class="card-value">' + value + '</div>' +
+            '<div class="card-sub">' + escapeHtml(sub || '') + '</div>' +
+          '</div>';
+      }
+
+      /* ── Devices Page ── */
+
+      var domainIcons = {
+        switch: '🔌', light: '💡', cover: '🪟', climate: '🌡️', fan: '🌀', lock: '🔒', valve: '🚰',
+        sensor: '📡', binary_sensor: '🔘'
+      };
+
+      function renderDevices() {
+        if (!state.devices) {
+          return '<div class="empty-state"><div class="icon">⏳</div><p>Lade Geräte…</p></div>';
+        }
+
+        var d = state.devices;
+        var tabs = [
+          { key: 'meters', label: 'Zähler', icon: '⚡', items: d.meters || [] },
+          { key: 'sensors', label: 'Sensoren', icon: '📡', items: d.sensors || [] },
+          { key: 'actuators', label: 'Aktoren', icon: '🔌', items: d.actuators || [] }
+        ];
+
+        var tabsHtml = '<div class="device-tabs">' + tabs.map(function(t) {
+          return '<button class="device-tab ' + (state.deviceTab === t.key ? 'active' : '') + '" data-device-tab="' + t.key + '">' +
+            t.icon + ' ' + escapeHtml(t.label) +
+            ' <span class="count">' + t.items.length + '</span>' +
+          '</button>';
+        }).join('') + '</div>';
+
+        var searchHtml = '<div style="margin-bottom:14px">' +
+          '<input type="text" class="search-box" id="deviceSearch" placeholder="Gerät suchen…" value="' + escapeHtml(state.deviceSearch) + '">' +
+        '</div>';
+
+        var currentTab = tabs.find(function(t) { return t.key === state.deviceTab; }) || tabs[0];
+        var items = currentTab.items;
+
+        if (state.deviceSearch) {
+          var q = state.deviceSearch.toLowerCase();
+          items = items.filter(function(item) {
+            return (item.friendly_name || '').toLowerCase().indexOf(q) !== -1 ||
+                   (item.entity_id || '').toLowerCase().indexOf(q) !== -1;
+          });
+        }
+
+        var contentHtml;
+        if (items.length === 0) {
+          contentHtml = '<div class="empty-state"><div class="icon">' + currentTab.icon + '</div>' +
+            '<p>Keine ' + escapeHtml(currentTab.label) + ' gefunden</p>' +
+            (state.deviceSearch ? '<p class="muted">Suchfilter anpassen</p>' : '') +
+          '</div>';
+        } else if (state.deviceTab === 'actuators') {
+          contentHtml = renderDeviceActuators(items);
+        } else {
+          contentHtml = renderDeviceTable(items);
+        }
+
+        return tabsHtml + searchHtml + contentHtml;
+      }
+
+      function renderDeviceTable(items) {
+        return renderTable([
+          'Name', 'Entity-ID', 'Wert', 'Einheit', 'Geräteklasse', 'Aktualisiert'
+        ], items.map(function(item) {
+          var icon = domainIcons[item.domain] || '📦';
+          return [
+            '<strong style="color:var(--text-primary)">' + icon + ' ' + escapeHtml(item.friendly_name || item.entity_id) + '</strong>',
+            '<code style="font-size:0.76rem">' + escapeHtml(item.entity_id) + '</code>',
+            '<span style="color:var(--accent-teal);font-weight:700">' + escapeHtml(item.state) + '</span>',
+            escapeHtml(item.unit || '–'),
+            item.device_class ? '<span class="badge badge-blue">' + escapeHtml(item.device_class) + '</span>' : '<span class="muted">–</span>',
+            escapeHtml(formatTimeShort(item.last_updated))
+          ];
+        }));
+      }
+
+      function renderDeviceActuators(items) {
+        return '<div class="control-grid">' + items.map(function(item) {
+          var isBusy = state.busyEntity === item.entity_id;
+          var isOn = item.state === 'on' || item.state === 'open' || item.state === 'heat';
+          var icon = domainIcons[item.domain] || '⚡';
+          var buttons;
+
+          if (item.domain === 'cover') {
+            buttons = '' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="open" ' + (isBusy ? 'disabled' : '') + '>▲</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="stop" ' + (isBusy ? 'disabled' : '') + '>■</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="close" ' + (isBusy ? 'disabled' : '') + '>▼</button>';
+          } else {
+            buttons = '' +
+              '<button class="ctrl-btn ' + (isOn ? 'active-on' : '') + '" data-entity="' + escapeHtml(item.entity_id) + '" data-service="on" ' + (isBusy ? 'disabled' : '') + '>Ein</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="off" ' + (isBusy ? 'disabled' : '') + '>Aus</button>';
+          }
+
+          return '' +
+            '<div class="control-tile">' +
+              '<div class="control-info">' +
+                '<div class="control-name">' + escapeHtml(icon + ' ' + (item.friendly_name || item.entity_id)) + '</div>' +
+                '<div class="control-entity">' + escapeHtml(item.entity_id) + '</div>' +
+                (item.device_class ? '<div style="margin-top:4px"><span class="badge badge-blue" style="font-size:0.7rem">' + escapeHtml(item.device_class) + '</span></div>' : '') +
+                '<div class="control-state ' + (isOn ? 'on' : 'off') + '">' + escapeHtml(item.state || 'unbekannt') + '</div>' +
+              '</div>' +
+              '<div class="control-btns">' + buttons + '</div>' +
+            '</div>';
+        }).join('') + '</div>';
+      }
+
+      /* ── Control Page (legacy, now just redirects to devices actuators) ── */
+
+      function renderControl() {
+        if (!state.actuators.length) {
+          return '<div class="empty-state"><div class="icon">🔌</div><p>Keine steuerbaren Geräte gefunden</p><p class="muted">Schalter, Lichter, Cover und Klima-Geräte erscheinen hier.</p></div>';
+        }
+
+        var icons = { switch: '🔌', light: '💡', cover: '🪟', climate: '🌡️' };
+        return '<div class="control-grid">' + state.actuators.map(function (item) {
+          var isBusy = state.busyEntity === item.entity_id;
+          var isOn = item.state === 'on' || item.state === 'open' || item.state === 'heat';
+          var buttons = item.domain === 'cover'
+            ? '' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="open" ' + (isBusy ? 'disabled' : '') + '>▲</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="stop" ' + (isBusy ? 'disabled' : '') + '>■</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="close" ' + (isBusy ? 'disabled' : '') + '>▼</button>'
+            : '' +
+              '<button class="ctrl-btn ' + (isOn ? 'active-on' : '') + '" data-entity="' + escapeHtml(item.entity_id) + '" data-service="on" ' + (isBusy ? 'disabled' : '') + '>Ein</button>' +
+              '<button class="ctrl-btn" data-entity="' + escapeHtml(item.entity_id) + '" data-service="off" ' + (isBusy ? 'disabled' : '') + '>Aus</button>';
+
+          return '' +
+            '<div class="control-tile">' +
+              '<div class="control-info">' +
+                '<div class="control-name">' + escapeHtml((icons[item.domain] || '⚡') + ' ' + (item.friendly_name || item.entity_id)) + '</div>' +
+                '<div class="control-entity">' + escapeHtml(item.entity_id) + '</div>' +
+                '<div class="control-state ' + (isOn ? 'on' : 'off') + '">' + escapeHtml(item.state || 'unbekannt') + '</div>' +
+              '</div>' +
+              '<div class="control-btns">' + buttons + '</div>' +
+            '</div>';
+        }).join('') + '</div>';
+      }
+
+      /* ── Automations Page (Enhanced) ── */
+
+      var conditionTypeLabels = {
+        sensor_value: 'Sensorwert',
+        time: 'Zeitfenster',
+        weekday: 'Wochentag',
+        status: 'Gerätestatus',
+        time_point: 'Zeitpunkt',
+        time_switch: 'Zeitschaltuhr'
+      };
+
+      var weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+      function formatCondition(c) {
+        if (!c || !c.type) return 'Unbekannt';
+        switch (c.type) {
+          case 'sensor_value':
+            return (c.sensor_uuid || 'Sensor') + ' ' + (c.operator || '?') + ' ' + (c.value != null ? c.value : '?');
+          case 'time':
+            return (c.time_from || '?') + ' – ' + (c.time_to || '?');
+          case 'weekday':
+            if (c.weekdays && c.weekdays.length) {
+              return c.weekdays.map(function(d) { return weekdayNames[d] || d; }).join(', ');
+            }
+            return 'Wochentage';
+          case 'status':
+            return (c.actuator_uuid || 'Gerät') + ' = ' + (c.expected_status || '?');
+          case 'time_point':
+            return '⏰ ' + (c.time_point || '?');
+          case 'time_switch':
+            if (c.time_points && c.time_points.length) {
+              return '⏰ ' + c.time_points.join(', ');
+            }
+            return '⏰ Zeitschaltuhr';
+          default:
+            return c.type;
+        }
+      }
+
+      function formatAction(a) {
+        if (!a) return 'Unbekannt';
+        var name = a.actuator_uuid || 'Gerät';
+        var cmd = a.action_value || a.action_type || 'pulse';
+        return name + ' → ' + cmd;
+      }
+
+      function renderAutomations() {
+        if (!state.automations.length) {
+          return '<div class="empty-state"><div class="icon">🤖</div><p>Keine lokalen Automationen</p><p class="muted">Automationen werden nach dem nächsten Cloud-Sync sichtbar.</p></div>';
+        }
+
+        return state.automations.map(function(auto) {
+          var conditions = auto.conditions || [];
+          var actions = auto.actions || [];
+          var logicOp = auto.logic_operator || 'AND';
+
+          // Build legacy single-action if no actions array
+          if (actions.length === 0 && auto.actuator_uuid) {
+            actions = [{ actuator_uuid: auto.actuator_uuid, action_type: auto.action_type, action_value: auto.action_value }];
+          }
+
+          // Conditions block
+          var condHtml = '';
+          if (conditions.length > 0) {
+            condHtml = '<div class="flow-block flow-conditions">' +
+              '<div class="flow-block-title">WENN ' + (conditions.length > 1 ? '(' + logicOp + ')' : '') + '</div>' +
+              conditions.map(function(c) {
+                return '<div class="flow-item">' +
+                  '<span class="badge badge-blue" style="font-size:0.68rem;margin-right:4px">' + escapeHtml(conditionTypeLabels[c.type] || c.type) + '</span> ' +
+                  escapeHtml(formatCondition(c)) +
+                '</div>';
+              }).join('') +
+            '</div>';
+          } else {
+            condHtml = '<div class="flow-block flow-conditions">' +
+              '<div class="flow-block-title">WENN</div>' +
+              '<div class="flow-item muted">Keine Bedingungen</div>' +
+            '</div>';
+          }
+
+          // Actions block
+          var actHtml = '<div class="flow-block flow-actions">' +
+            '<div class="flow-block-title">DANN</div>' +
+            (actions.length > 0
+              ? actions.map(function(a) {
+                  return '<div class="flow-item">' + escapeHtml(formatAction(a)) + '</div>';
+                }).join('')
+              : '<div class="flow-item muted">Keine Aktionen</div>'
+            ) +
+          '</div>';
+
+          return '<div class="auto-card">' +
+            '<div class="auto-header">' +
+              '<div class="auto-name">' + escapeHtml(auto.name || 'Unbenannt') + '</div>' +
+              '<div class="auto-meta">' +
+                '<span class="badge ' + (auto.is_active ? 'badge-active' : 'badge-inactive') + '">' + (auto.is_active ? 'Aktiv' : 'Inaktiv') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="auto-flow">' +
+              condHtml +
+              '<div class="flow-arrow">→</div>' +
+              actHtml +
+            '</div>' +
+            '<div class="auto-footer">' +
+              '<span>Bedingungen: ' + conditions.length + '</span>' +
+              '<span>Aktionen: ' + (actions.length) + '</span>' +
+              '<span>Letzte Ausführung: ' + escapeHtml(formatTimeShort(auto.last_executed_at)) + '</span>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      function renderLogs() {
+        if (!state.logs.length) {
+          return '<div class="empty-state"><div class="icon">🧾</div><p>Keine Logs verfügbar</p></div>';
+        }
+
+        return renderTable([
+          'Zeit', 'Status', 'Trigger', 'Dauer', 'Fehler'
+        ], state.logs.map(function (item) {
+          var statusClass = item.status === 'success' ? 'badge-success' : (item.status === 'error' ? 'badge-error' : 'badge-warn');
+          return [
+            escapeHtml(formatTime(item.created_at)),
+            '<span class="badge ' + statusClass + '">' + escapeHtml(item.status || 'unbekannt') + '</span>',
+            escapeHtml(item.trigger_type || '–'),
+            escapeHtml(item.duration_ms != null ? item.duration_ms + ' ms' : '–'),
+            escapeHtml(item.error_message || '–')
+          ];
+        }));
+      }
+
+      function renderConfig() {
+        if (!state.config) {
+          return '<div class="empty-state"><div class="icon">⚙️</div><p>Konfiguration wird geladen…</p></div>';
+        }
+
+        var entries = Object.keys(state.config).sort().map(function (key) {
+          var value = state.config[key];
+          if (value && typeof value === 'object') value = JSON.stringify(value);
+          return '' +
+            '<li>' +
+              '<span class="config-key">' + escapeHtml(key.replace(/_/g, ' ')) + '</span>' +
+              '<span class="config-val">' + escapeHtml(value == null ? '–' : value) + '</span>' +
+            '</li>';
+        }).join('');
+
+        return '' +
+          '<div class="panel">' +
+            '<div class="section-title">Lokale Gateway-Konfiguration</div>' +
+            '<ul class="config-list">' + entries + '</ul>' +
+          '</div>';
+      }
+
+      function renderTable(headers, rows) {
+        return '' +
+          '<div class="table-wrap">' +
+            '<table>' +
+              '<thead><tr>' + headers.map(function (header) { return '<th>' + escapeHtml(header) + '</th>'; }).join('') + '</tr></thead>' +
+              '<tbody>' + rows.map(function (cells) {
+                return '<tr>' + cells.map(function (cell) { return '<td>' + cell + '</td>'; }).join('') + '</tr>';
+              }).join('') + '</tbody>' +
+            '</table>' +
+          '</div>';
+      }
+
+      function pageContent() {
+        switch (state.page) {
+          case 'devices': return renderDevices();
+          case 'control': return renderControl();
+          case 'automations': return renderAutomations();
+          case 'logs': return renderLogs();
+          case 'config': return renderConfig();
+          default: return renderDashboard();
+        }
+      }
+
+      function render() {
+        var status = state.status || {};
+        var online = status.status === 'running';
+        var cloudReachable = !!status.cloud_reachable;
+        var errorHtml = state.error
+          ? '<div class="error-state" style="margin-bottom:18px"><div class="icon">⚠️</div><p><strong>API aktuell nicht erreichbar</strong></p><p>' + escapeHtml(state.error) + '</p></div>'
+          : '';
+
+        app.innerHTML = '' +
+          '<div class="header">' +
+            '<div>' +
+              '<div class="header-title">' +
+                '<svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="6" fill="#0a0f1a" stroke="#14b8a6"/><path d="M16 6l8 14H8z" fill="#14b8a6"/><circle cx="16" cy="24" r="3" fill="#14b8a6"/></svg>' +
+                '<span>AICONO EMS</span>' +
+              '</div>' +
+              '<div class="header-subtitle">Lokales Gateway mit Geräte-Verwaltung, Automationen und Live-Steuerung.</div>' +
+            '</div>' +
+            '<div class="header-meta">' +
+              '<div class="pill"><span class="status-dot ' + (online ? 'online' : 'offline') + '"></span>' + (online ? 'Gateway online' : 'Gateway offline') + '</div>' +
+              '<div class="pill"><span class="status-dot ' + (cloudReachable ? 'online' : 'offline') + '"></span>' + (cloudReachable ? 'Cloud verbunden' : 'Cloud offline') + '</div>' +
+              '<div class="pill">Version ' + escapeHtml((state.version && state.version.version) || status.addon_version || '–') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="nav">' + Object.keys(pageLabels).map(function (key) {
+            return '<button class="nav-btn ' + (state.page === key ? 'active' : '') + '" data-page="' + key + '">' + pageLabels[key] + '</button>';
+          }).join('') + '</div>' +
+          '<div class="toolbar">' +
+            '<div class="muted">Zuletzt aktualisiert: ' + escapeHtml(state.lastUpdated ? formatTime(state.lastUpdated) : '–') + '</div>' +
+            '<button class="action-btn" id="refresh-button">Aktualisieren</button>' +
+          '</div>' +
+          errorHtml +
+          pageContent() +
+          '<div class="footer">AICONO EMS Gateway • Lokale UI ohne externe Abhängigkeiten</div>';
+
+        bindEvents();
+      }
+
+      function bindEvents() {
+        var navButtons = app.querySelectorAll('[data-page]');
+        for (var i = 0; i < navButtons.length; i += 1) {
+          navButtons[i].addEventListener('click', function (event) {
+            var page = event.currentTarget.getAttribute('data-page');
+            if (!page || page === state.page) return;
+            state.page = page;
+            render();
+            loadCurrentPage();
+          });
+        }
+
+        var refreshButton = document.getElementById('refresh-button');
+        if (refreshButton) {
+          refreshButton.addEventListener('click', function () {
+            loadCurrentPage(true);
+          });
+        }
+
+        var actionButtons = app.querySelectorAll('[data-entity][data-service]');
+        for (var j = 0; j < actionButtons.length; j += 1) {
+          actionButtons[j].addEventListener('click', function (event) {
+            var button = event.currentTarget;
+            var entityId = button.getAttribute('data-entity');
+            var service = button.getAttribute('data-service');
+            if (!entityId || !service) return;
+            executeService(entityId, service);
+          });
+        }
+
+        // Device sub-tabs
+        var deviceTabBtns = app.querySelectorAll('[data-device-tab]');
+        for (var k = 0; k < deviceTabBtns.length; k += 1) {
+          deviceTabBtns[k].addEventListener('click', function (event) {
+            var tab = event.currentTarget.getAttribute('data-device-tab');
+            if (tab && tab !== state.deviceTab) {
+              state.deviceTab = tab;
+              render();
+            }
+          });
+        }
+
+        // Device search
+        var searchInput = document.getElementById('deviceSearch');
+        if (searchInput) {
+          searchInput.addEventListener('input', function () {
+            state.deviceSearch = this.value;
+            render();
+            // Restore focus and cursor position
+            var newInput = document.getElementById('deviceSearch');
+            if (newInput) {
+              newInput.focus();
+              newInput.setSelectionRange(state.deviceSearch.length, state.deviceSearch.length);
+            }
+          });
+        }
+      }
+
+      async function loadStatus() {
+        state.status = await fetchJson('/api/status');
+        state.version = await fetchJson('/api/version');
+      }
+
+      async function loadDevices() {
+        var payload = await fetchJson('/api/devices');
+        state.devices = payload && payload.devices ? payload.devices : { meters: [], sensors: [], actuators: [] };
+      }
+
+      async function loadActuators() {
+        var payload = await fetchJson('/api/actuators');
+        state.actuators = payload && payload.actuators ? payload.actuators : [];
+      }
+
+      async function loadAutomations() {
+        var payload = await fetchJson('/api/automations');
+        state.automations = payload && payload.automations ? payload.automations : [];
+      }
+
+      async function loadLogs() {
+        var payload = await fetchJson('/api/logs?limit=50');
+        state.logs = payload && payload.logs ? payload.logs : [];
+      }
+
+      async function loadConfig() {
+        state.config = await fetchJson('/api/config');
+      }
+
+      async function executeService(entityId, service) {
+        try {
+          state.busyEntity = entityId;
+          render();
+          await fetchJson('/api/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entity_id: entityId, service: service })
+          });
+          // Reload device data or actuators after command
+          if (state.page === 'devices') {
+            await loadDevices();
+          } else {
+            await loadActuators();
+          }
+          state.error = '';
+        } catch (error) {
+          state.error = error && error.message ? error.message : String(error);
+        } finally {
+          state.busyEntity = '';
+          state.lastUpdated = new Date().toISOString();
+          render();
+        }
+      }
+
+      async function loadCurrentPage(forceStatus) {
+        try {
+          if (forceStatus || !state.status) {
+            await loadStatus();
+          }
+
+          if (state.page === 'devices') await loadDevices();
+          if (state.page === 'control') await loadActuators();
+          if (state.page === 'automations') await loadAutomations();
+          if (state.page === 'logs') await loadLogs();
+          if (state.page === 'config') await loadConfig();
+
+          state.error = '';
+          state.lastUpdated = new Date().toISOString();
+        } catch (error) {
+          state.error = error && error.message ? error.message : String(error);
+        }
+
+        render();
+      }
+
+      function startAutoRefresh() {
+        if (refreshHandle) clearInterval(refreshHandle);
+        refreshHandle = setInterval(function () {
+          loadCurrentPage(true);
+        }, 10000);
+      }
+
+      /* ── Login screen ─────────────────────────────────────────── */
+
+      var loginOverlay = null;
+
+      function showLoginScreen() {
+        if (loginOverlay) return;
+        if (refreshHandle) clearInterval(refreshHandle);
+
+        loginOverlay = document.createElement('div');
+        loginOverlay.className = 'login-overlay';
+        loginOverlay.innerHTML = '' +
+          '<div class="login-box">' +
+            '<svg width="40" height="40" viewBox="0 0 32 32" style="margin-bottom:12px"><rect width="32" height="32" rx="6" fill="#0a0f1a"/><path d="M16 6l8 14H8z" fill="#14b8a6"/><circle cx="16" cy="24" r="3" fill="#14b8a6"/></svg>' +
+            '<h2>AICONO EMS</h2>' +
+            '<p>Bitte gib den PIN ein, um fortzufahren.</p>' +
+            '<div class="pin-inputs" id="pinInputs"></div>' +
+            '<button class="login-btn" id="loginBtn" disabled>Entsperren</button>' +
+            '<div class="login-error" id="loginError"></div>' +
+          '</div>';
+        document.body.appendChild(loginOverlay);
+
+        var pinContainer = document.getElementById('pinInputs');
+        var pinValues = ['', '', '', '', '', ''];
+        for (var i = 0; i < 6; i++) {
+          (function(idx) {
+            var inp = document.createElement('input');
+            inp.type = 'tel';
+            inp.maxLength = 1;
+            inp.inputMode = 'numeric';
+            inp.pattern = '[0-9]';
+            inp.autocomplete = 'off';
+            inp.addEventListener('input', function() {
+              pinValues[idx] = this.value.replace(/[^0-9]/g, '').slice(0, 1);
+              this.value = pinValues[idx];
+              if (pinValues[idx] && idx < 5) {
+                pinContainer.children[idx + 1].focus();
+              }
+              var filled = pinValues.join('').length;
+              document.getElementById('loginBtn').disabled = filled < 4;
+            });
+            inp.addEventListener('keydown', function(e) {
+              if (e.key === 'Backspace' && !this.value && idx > 0) {
+                pinContainer.children[idx - 1].focus();
+              }
+              if (e.key === 'Enter') {
+                document.getElementById('loginBtn').click();
+              }
+            });
+            inp.addEventListener('paste', function(e) {
+              e.preventDefault();
+              var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+              for (var j = 0; j < Math.min(pasted.length, 6); j++) {
+                pinValues[j] = pasted[j];
+                if (pinContainer.children[j]) pinContainer.children[j].value = pasted[j];
+              }
+              var focusIdx = Math.min(pasted.length, 5);
+              pinContainer.children[focusIdx].focus();
+              document.getElementById('loginBtn').disabled = pinValues.join('').length < 4;
+            });
+            pinContainer.appendChild(inp);
+          })(i);
+        }
+        pinContainer.children[0].focus();
+
+        document.getElementById('loginBtn').addEventListener('click', async function() {
+          var pin = pinValues.join('');
+          if (pin.length < 4) return;
+          var btn = this;
+          var errEl = document.getElementById('loginError');
+          btn.disabled = true;
+          btn.textContent = 'Prüfe…';
+          errEl.textContent = '';
+
+          try {
+            var urls = buildApiCandidates('/api/auth');
+            var success = false;
+            for (var k = 0; k < urls.length; k++) {
+              try {
+                var resp = await fetch(urls[k], {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ pin: pin })
+                });
+                if (resp.ok) {
+                  success = true;
+                  break;
+                }
+                if (resp.status === 429) {
+                  var d = await resp.json();
+                  errEl.textContent = 'Gesperrt – bitte ' + (d.retry_after_seconds || 60) + 's warten';
+                  btn.disabled = false;
+                  btn.textContent = 'Entsperren';
+                  return;
+                }
+                if (resp.status === 401) {
+                  var d2 = await resp.json();
+                  errEl.textContent = 'Falscher PIN' + (d2.remaining_attempts ? ' (' + d2.remaining_attempts + ' Versuche übrig)' : '');
+                  for (var m = 0; m < 6; m++) { pinValues[m] = ''; pinContainer.children[m].value = ''; }
+                  pinContainer.children[0].focus();
+                  btn.disabled = true;
+                  btn.textContent = 'Entsperren';
+                  return;
+                }
+              } catch(e) { /* try next candidate */ }
+            }
+
+            if (success) {
+              loginOverlay.remove();
+              loginOverlay = null;
+              loadCurrentPage(true);
+              startAutoRefresh();
+            } else {
+              errEl.textContent = 'Verbindung fehlgeschlagen';
+              btn.disabled = false;
+              btn.textContent = 'Entsperren';
+            }
+          } catch (e) {
+            errEl.textContent = e.message || 'Fehler';
+            btn.disabled = false;
+            btn.textContent = 'Entsperren';
+          }
+        });
+      }
+
+      /* ── Auth-aware startup ─────────────────────────────────── */
+
+      async function checkAuthAndStart() {
+        try {
+          var urls = buildApiCandidates('/api/auth-status');
+          for (var i = 0; i < urls.length; i++) {
+            try {
+              var resp = await fetch(urls[i], { credentials: 'same-origin' });
+              if (resp.ok) {
+                var data = await resp.json();
+                if (data.pin_required && !data.authenticated) {
+                  showLoginScreen();
+                  return;
+                }
+                break;
+              }
+            } catch(e) { /* try next */ }
+          }
+        } catch(e) { /* proceed without auth check */ }
+
+        render();
+        loadCurrentPage(true);
+        startAutoRefresh();
+      }
+
+      checkAuthAndStart();
+    })();
+  </script>
+</body>
+</html>
