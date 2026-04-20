@@ -50,19 +50,54 @@ interface AddonConfig {
 
 const DEFAULT_CLOUD_URL = "https://xnveugycurplszevdxtw.supabase.co";
 
+/**
+ * Normalize cloud_url so the rest of the code can safely append paths.
+ * - Accepts ws://, wss://, http://, https:// and rewrites to http(s)://
+ * - Strips trailing slashes
+ * - Strips any accidentally appended /functions/... path so URL builders
+ *   like `${cloud_url}/functions/v1/gateway-ingest` produce clean URLs
+ *   instead of `wss://.../functions/v1/gateway-ws/functions/v1/gateway-ingest`.
+ * - Falls back to DEFAULT_CLOUD_URL if input is empty/invalid.
+ */
+function normalizeCloudUrl(input: string | undefined | null): string {
+  let url = (input || "").trim();
+  if (!url) return DEFAULT_CLOUD_URL;
+  // ws:// → http:// , wss:// → https://
+  url = url.replace(/^wss:\/\//i, "https://").replace(/^ws:\/\//i, "http://");
+  // If user pasted a bare host without scheme, default to https
+  if (!/^https?:\/\//i.test(url)) {
+    url = "https://" + url.replace(/^\/+/, "");
+  }
+  // Strip trailing slashes
+  url = url.replace(/\/+$/, "");
+  // Strip any /functions/... suffix the user may have included
+  url = url.replace(/\/functions\/.*$/i, "");
+  // Final sanity check
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    console.warn(`[config] Invalid cloud_url "${input}", falling back to default`);
+    return DEFAULT_CLOUD_URL;
+  }
+}
+
 function loadConfig(): AddonConfig {
   const optionsPath = "/data/options.json";
   try {
     const raw = fs.readFileSync(optionsPath, "utf-8");
     console.log("[config] Loaded /data/options.json");
     const parsed = JSON.parse(raw);
-    const cloudUrl = parsed.cloud_url || parsed.supabase_url || DEFAULT_CLOUD_URL;
+    const cloudUrl = normalizeCloudUrl(parsed.cloud_url || parsed.supabase_url);
+    if (cloudUrl !== (parsed.cloud_url || parsed.supabase_url)) {
+      console.log(`[config] Normalized cloud_url → ${cloudUrl}`);
+    }
     return { automation_eval_seconds: 30, ...parsed, cloud_url: cloudUrl };
   } catch (error: any) {
     console.warn(`[config] Cannot read ${optionsPath} (${error?.code || error?.message}), using env vars`);
   }
   return {
-    cloud_url: process.env.CLOUD_URL || process.env.SUPABASE_URL || DEFAULT_CLOUD_URL,
+    cloud_url: normalizeCloudUrl(process.env.CLOUD_URL || process.env.SUPABASE_URL),
     gateway_api_key: process.env.GATEWAY_API_KEY || "",
     tenant_id: process.env.TENANT_ID || "",
     device_name: process.env.DEVICE_NAME || "aicono-ems",
@@ -83,7 +118,7 @@ const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN || "";
 const HA_API_BASE = "http://supervisor/core/api";
 const INGEST_URL = `${config.cloud_url}/functions/v1/gateway-ingest`;
 const GATEWAY_WS_URL = `${config.cloud_url.replace(/^http/, "ws")}/functions/v1/gateway-ws`;
-const ADDON_VERSION = "3.0.0";
+const ADDON_VERSION = "3.0.2";
 
 /* ── Auth header helper for gateway-ingest (Daten-Upload) ────────────────────── */
 // gateway-ingest akzeptiert weiterhin Basic Auth (username/password) ODER Bearer.
@@ -95,6 +130,20 @@ function authHeader(): string {
     return `Basic ${Buffer.from(creds, "utf-8").toString("base64")}`;
   }
   return `Bearer ${config.gateway_api_key || ""}`;
+}
+
+async function cloudAuthHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    Authorization: authHeader(),
+    ...extra,
+  };
+  try {
+    const mac = (await getHostMAC() || "").toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 12);
+    if (mac.length === 12) headers["x-gateway-mac"] = mac;
+  } catch {
+    // ignore MAC lookup failures
+  }
+  return headers;
 }
 
 /* ── (Cloudflare-Tunnel entfernt in v3.0 – ersetzt durch WebSocket-Push) ─────── */
@@ -169,8 +218,8 @@ function markCloudUnreachable(): void {
 
 async function checkCloudConnectivity(): Promise<boolean> {
   try {
-    const res = await fetch(`${config.cloud_url}/functions/v1/gateway-ingest?action=addon-version`, {
-      headers: { Authorization: authHeader() },
+    const res = await fetch(`${INGEST_URL}?action=addon-version`, {
+      headers: await cloudAuthHeaders(),
       signal: AbortSignal.timeout(15000),
     });
     if (res.ok) {
@@ -377,7 +426,7 @@ async function fetchMeterMappings(): Promise<void> {
   }
   try {
     const res = await fetch(`${INGEST_URL}?action=list-meters`, {
-      headers: { Authorization: authHeader() },
+      headers: await cloudAuthHeaders(),
     });
     if (!res.ok) {
       console.error(`[mapping] Failed to fetch meters: ${res.status}`);
@@ -850,7 +899,7 @@ async function syncAutomationsFromCloud(): Promise<void> {
     }
 
     const res = await fetch(`${INGEST_URL}?${params.toString()}`, {
-      headers: { Authorization: authHeader() },
+      headers: await cloudAuthHeaders(),
       signal: AbortSignal.timeout(15000),
     });
 
