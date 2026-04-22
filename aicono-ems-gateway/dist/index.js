@@ -1074,6 +1074,7 @@ let cloudWsConnected = false;
 let cloudWsReconnectDelay = 5_000;
 const CLOUD_WS_RECONNECT_MAX = 60_000;
 let cloudWsHeartbeatTimer = null;
+let startServerPromise = null;
 let cloudWsAssignment = {};
 function safeWsSend(ws, msg) {
     if (!ws || ws.readyState !== 1 /* OPEN */)
@@ -1500,6 +1501,8 @@ function serveStaticFile(filePath, res) {
     }
 }
 function startServer() {
+    if (startServerPromise)
+        return startServerPromise;
     const server = http_1.default.createServer(async (req, res) => {
         const url = new URL(req.url || "/", `http://localhost:8099`);
         const pathname = url.pathname;
@@ -1802,9 +1805,15 @@ function startServer() {
         res.writeHead(404);
         res.end("Not Found");
     });
-    server.listen(8099, () => {
-        console.log("[server] AICONO EMS Gateway API + UI listening on port 8099");
+    startServerPromise = new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(8099, () => {
+            server.off("error", reject);
+            console.log("[server] AICONO EMS Gateway API + UI listening on port 8099");
+            resolve();
+        });
     });
+    return startServerPromise;
 }
 /* ── Main ────────────────────────────────────────────────────────────────────── */
 async function main() {
@@ -1830,7 +1839,7 @@ async function main() {
         latestHAStates = cachedStates;
         console.log(`[offline] Loaded ${cachedStates.length} HA states from cache`);
     }
-    startServer();
+    await startServer();
     // Initial setup
     await checkCloudConnectivity();
     await fetchHAVersion();
