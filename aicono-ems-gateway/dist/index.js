@@ -848,7 +848,7 @@ async function syncAutomationsFromCloud() {
         const localCount = db.prepare(`SELECT COUNT(*) as c FROM automations_local`).get().c;
         const mismatch = lastAutomationCount >= 0 && localCount !== lastAutomationCount;
         const isFullSync = !lastAutomationSync || automationSyncCount % 6 === 0 || mismatch;
-        const tenantIdParam = config.tenant_id || cloudWsAssignment.tenant_id || "";
+        const tenantIdParam = cloudWsAssignment.tenant_id || config.tenant_id || "";
         const params = new URLSearchParams({
             action: "sync-automations",
             tenant_id: tenantIdParam,
@@ -1654,6 +1654,7 @@ function startServer() {
                 credentials_configured: !!(config.gateway_username && config.gateway_password),
                 cloud_ws_connected: cloudWsConnected,
                 cloud_ws_device_id: cloudWsAssignment.device_id || null,
+                cloud_ws_tenant_id: cloudWsAssignment.tenant_id || config.tenant_id || null,
                 cloud_ws_tenant_name: cloudWsAssignment.tenant_name || null,
                 cloud_ws_location_id: cloudWsAssignment.location_id || null,
                 cloud_ws_location_name: cloudWsAssignment.location_name || null,
@@ -1662,9 +1663,11 @@ function startServer() {
         }
         if (pathname === "/api/config") {
             res.writeHead(200, { "Content-Type": "application/json" });
+            const { tenant_id, ...restConfig } = config;
             res.end(JSON.stringify({
-                ...config,
+                ...restConfig,
                 gateway_api_key: "[redacted]",
+                tenant_id_legacy: tenant_id || null,
             }));
             return;
         }
@@ -1874,7 +1877,7 @@ async function main() {
     console.log(`  AICONO EMS Gateway v${ADDON_VERSION}`);
     console.log("═══════════════════════════════════════════════════════");
     console.log(`  Device:     ${config.device_name}`);
-    console.log(`  Tenant:     ${config.tenant_id}`);
+    console.log(`  Tenant:     ${config.tenant_id || "auto via Cloud-Zuordnung"}`);
     console.log(`  Poll:       ${config.poll_interval_seconds}s`);
     console.log(`  Flush:      ${config.flush_interval_seconds}s`);
     console.log(`  Heartbeat:  ${config.heartbeat_interval_seconds}s`);
