@@ -599,9 +599,19 @@ function updateLocalExecutionTime(id) {
     db.prepare(`UPDATE automations_local SET last_executed_at = ? WHERE id = ?`)
         .run(new Date().toISOString(), id);
 }
+function normalizeSqliteTimestampToIso(value) {
+    if (!value)
+        return null;
+    if (/z$/i.test(value) || /[+-]\d{2}:\d{2}$/.test(value))
+        return value;
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+        return value.replace(" ", "T") + "Z";
+    }
+    return value;
+}
 function insertExecLog(entry) {
-    db.prepare(`INSERT INTO automation_exec_log (automation_id, tenant_id, status, error_message, actions_executed, duration_ms, trigger_type) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(entry.automation_id, entry.tenant_id, entry.status, entry.error_message || null, entry.actions_executed ? JSON.stringify(entry.actions_executed) : null, entry.duration_ms || null, entry.trigger_type || "scheduled");
+    db.prepare(`INSERT INTO automation_exec_log (automation_id, tenant_id, status, error_message, actions_executed, duration_ms, trigger_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(entry.automation_id, entry.tenant_id, entry.status, entry.error_message || null, entry.actions_executed ? JSON.stringify(entry.actions_executed) : null, entry.duration_ms || null, entry.trigger_type || "scheduled", new Date().toISOString());
     pruneExecutionLogs();
 }
 function getLocalTimeParts(timezone) {
@@ -1806,6 +1816,7 @@ function startServer() {
             }
             const enrichedLogs = logs.map((log) => ({
                 ...log,
+                created_at: normalizeSqliteTimestampToIso(log.created_at) || log.created_at,
                 automation_name: automationNameById.get(log.automation_id) || log.automation_id,
             }));
             res.writeHead(200, { "Content-Type": "application/json" });
