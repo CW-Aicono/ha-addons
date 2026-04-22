@@ -103,6 +103,8 @@ const GATEWAY_WS_URL = `${config.cloud_url.replace(/^http/, "ws")}/functions/v1/
 // Version wird beim Docker-Build automatisch aus config.yaml injiziert
 // (siehe Dockerfile: ENV ADDON_VERSION=...). Fallback nur für lokale Dev-Runs.
 const ADDON_VERSION = process.env.ADDON_VERSION || "dev";
+const SUPERVISOR_COMMAND_COOLDOWN_MS = 5 * 60 * 1000;
+let supervisorCommandInFlight = null;
 /* ── Auth header helper for gateway-ingest (Daten-Upload) ────────────────────── */
 // gateway-ingest akzeptiert weiterhin Basic Auth (username/password) ODER Bearer.
 // Die WS-Verbindung nutzt einen eigenen JSON-Auth-Frame (siehe gatewayWsClient).
@@ -127,6 +129,62 @@ async function cloudAuthHeaders(extra = {}) {
         // ignore MAC lookup failures
     }
     return headers;
+}
+function isSupervisorCommandBlocked(command) {
+    return !!supervisorCommandInFlight
+        && Date.now() - supervisorCommandInFlight.startedAt < SUPERVISOR_COMMAND_COOLDOWN_MS
+        && (supervisorCommandInFlight.command === command || ["update", "restart"].includes(supervisorCommandInFlight.command));
+}
+function markSupervisorCommandStart(command) {
+    if (isSupervisorCommandBlocked(command))
+        return false;
+    supervisorCommandInFlight = { command, startedAt: Date.now() };
+    return true;
+}
+function clearSupervisorCommandLock(command) {
+    if (supervisorCommandInFlight?.command === command) {
+        supervisorCommandInFlight = null;
+    }
+}
+async function callSupervisorAddonCommand(command) {
+    if (!markSupervisorCommandStart(command)) {
+        console.warn(`[command] Supervisor command '${command}' skipped because another lifecycle job is already in progress`);
+        return;
+    }
+    try {
+        const addonSlug = process.env.HOSTNAME || "local_aicono_ems_gateway";
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        try {
+            const res = await fetch(`http://supervisor/addons/${addonSlug}/${command}`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
+                signal: controller.signal,
+            });
+            if (res.ok) {
+                console.log(`[command] Supervisor command '${command}' accepted`);
+                return;
+            }
+            const bodyText = await res.text().catch(() => "");
+            const lowerText = bodyText.toLowerCase();
+            if (res.status === 409 || lowerText.includes("another job is running") || lowerText.includes("timeout") || lowerText.includes("reload request")) {
+                console.warn(`[command] Supervisor busy for '${command}': ${res.status} ${bodyText}`);
+                return;
+            }
+            throw new Error(`Supervisor API returned ${res.status}: ${bodyText}`);
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+    catch (err) {
+        if (err?.name === "AbortError") {
+            console.warn(`[command] Supervisor command '${command}' timed out while another HA job may still be running`);
+            return;
+        }
+        clearSupervisorCommandLock(command);
+        throw err;
+    }
 }
 /* ── (Cloudflare-Tunnel entfernt in v3.0 – ersetzt durch WebSocket-Push) ─────── */
 /* ── Connectivity State ──────────────────────────────────────────────────────── */
@@ -1350,16 +1408,9 @@ async function executePendingCommand(command, params) {
                 // Send a final heartbeat to confirm receipt, then restart via Supervisor API
                 setTimeout(async () => {
                     try {
-                        const addonSlug = process.env.HOSTNAME || "local_aicono_ems_gateway";
-                        const res = await fetch(`http://supervisor/addons/${addonSlug}/restart`, {
-                            method: "POST",
-                            headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
-                        });
-                        if (!res.ok) {
-                            console.error(`[command] Restart API returned ${res.status}`);
-                            // Fallback: exit process (container orchestrator will restart)
-                            process.exit(0);
-                        }
+                        await callSupervisorAddonCommand("restart");
+                        // Fallback: exit process (container orchestrator will restart)
+                        process.exit(0);
                     }
                     catch (err) {
                         console.error("[command] Restart via Supervisor failed, forcing exit:", err);
@@ -1370,17 +1421,7 @@ async function executePendingCommand(command, params) {
             case "update":
                 console.log("[command] Update command received – triggering add-on update via Supervisor...");
                 try {
-                    const addonSlug = process.env.HOSTNAME || "local_aicono_ems_gateway";
-                    const res = await fetch(`http://supervisor/addons/${addonSlug}/update`, {
-                        method: "POST",
-                        headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
-                    });
-                    if (res.ok) {
-                        console.log("[command] Update triggered successfully");
-                    }
-                    else {
-                        console.error(`[command] Update API returned ${res.status}: ${await res.text()}`);
-                    }
+                    await callSupervisorAddonCommand("update");
                 }
                 catch (err) {
                     console.error("[command] Update via Supervisor failed:", err);
