@@ -25,7 +25,9 @@ import Database from "better-sqlite3";
 let WebSocketClient: (new (url: string) => import("ws")) | undefined;
 try {
   WebSocketClient = require("ws") as any;
-} catch { /* ws not available, WebSocket features disabled */ }
+} catch {
+  /* ws not available, WebSocket features disabled */
+}
 
 import { WallboxBridgeManager, type WallboxInstance, type WallboxTemplate } from "./modbus-wallbox-bridge";
 let wallboxManager: WallboxBridgeManager | null = null;
@@ -39,36 +41,43 @@ function getWallboxManager(): WallboxBridgeManager {
   return wallboxManager;
 }
 
-async function fetchWallboxInstanceAndTemplate(instanceId: string): Promise<{ inst: WallboxInstance; tpl: WallboxTemplate } | null> {
+async function fetchWallboxInstanceAndTemplate(
+  instanceId: string,
+): Promise<{ inst: WallboxInstance; tpl: WallboxTemplate } | null> {
   try {
-    const url = `${config.cloud_url}/rest/v1/wallbox_modbus_instances?id=eq.${instanceId}&select=*,template:wallbox_modbus_templates(*),charge_point:charge_points(ocpp_id)`;
+    // Authentifizierter Gateway-Endpoint (RLS-Bypass via GATEWAY_API_KEY).
+    const url = `${config.cloud_url}/functions/v1/gateway-wallbox-fetch`;
+    const key = config.gateway_api_key || process.env.GATEWAY_API_KEY || "";
     const res = await fetch(url, {
+      method: "POST",
       headers: {
-        apikey: process.env.SUPABASE_ANON_KEY || "",
-        Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY || ""}`,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
       },
+      body: JSON.stringify({ instance_id: instanceId }),
     });
-    if (!res.ok) return null;
-    const rows = await res.json() as any[];
-    const row = rows?.[0];
-    if (!row) return null;
+    if (!res.ok) {
+      console.error("[wb-bridge] fetch instance HTTP", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    const data = (await res.json()) as { instance: any; template: WallboxTemplate };
+    if (!data?.instance || !data?.template) return null;
     return {
       inst: {
-        id: row.id,
-        template_id: row.template_id,
-        charge_point_ocpp_id: row.charge_point?.ocpp_id ?? row.id,
-        modbus_host: row.modbus_host,
-        modbus_port: row.modbus_port,
-        unit_id: row.unit_id,
+        id: data.instance.id,
+        template_id: data.instance.template_id,
+        charge_point_ocpp_id: data.instance.charge_point_ocpp_id ?? data.instance.id,
+        modbus_host: data.instance.modbus_host,
+        modbus_port: data.instance.modbus_port,
+        unit_id: data.instance.unit_id,
       },
-      tpl: row.template as WallboxTemplate,
+      tpl: data.template,
     };
   } catch (e) {
     console.error("[wb-bridge] fetch instance failed", (e as Error).message);
     return null;
   }
 }
-
 
 /* ── Configuration ───────────────────────────────────────────────────────────── */
 
@@ -168,7 +177,15 @@ const SUPERVISOR_COMMAND_COOLDOWN_MS = 5 * 60 * 1000;
 let supervisorCommandInFlight: { command: string; startedAt: number } | null = null;
 
 /* ── Phase 2: Worker timers + remote-config state ────────────────────────────── */
-type TimerName = "poll" | "flush" | "watchdog" | "automation" | "syncAutomations" | "meterMappings" | "snapshot" | "backup";
+type TimerName =
+  | "poll"
+  | "flush"
+  | "watchdog"
+  | "automation"
+  | "syncAutomations"
+  | "meterMappings"
+  | "snapshot"
+  | "backup";
 const workerTimers: Partial<Record<TimerName, NodeJS.Timeout>> = {};
 let remoteConfigVersion = 0;
 
@@ -268,7 +285,10 @@ async function cloudAuthHeaders(extra: Record<string, string> = {}): Promise<Rec
     ...extra,
   };
   try {
-    const mac = (await getHostMAC() || "").toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 12);
+    const mac = ((await getHostMAC()) || "")
+      .toLowerCase()
+      .replace(/[^0-9a-f]/g, "")
+      .slice(0, 12);
     if (mac.length === 12) headers["x-gateway-mac"] = mac;
   } catch {
     // ignore MAC lookup failures
@@ -277,9 +297,11 @@ async function cloudAuthHeaders(extra: Record<string, string> = {}): Promise<Rec
 }
 
 function isSupervisorCommandBlocked(command: string): boolean {
-  return !!supervisorCommandInFlight
-    && Date.now() - supervisorCommandInFlight.startedAt < SUPERVISOR_COMMAND_COOLDOWN_MS
-    && (supervisorCommandInFlight.command === command || ["update", "restart"].includes(supervisorCommandInFlight.command));
+  return (
+    !!supervisorCommandInFlight &&
+    Date.now() - supervisorCommandInFlight.startedAt < SUPERVISOR_COMMAND_COOLDOWN_MS &&
+    (supervisorCommandInFlight.command === command || ["update", "restart"].includes(supervisorCommandInFlight.command))
+  );
 }
 
 function markSupervisorCommandStart(command: string): boolean {
@@ -296,7 +318,9 @@ function clearSupervisorCommandLock(command: string): void {
 
 async function callSupervisorAddonCommand(command: "update" | "restart"): Promise<void> {
   if (!markSupervisorCommandStart(command)) {
-    console.warn(`[command] Supervisor command '${command}' skipped because another lifecycle job is already in progress`);
+    console.warn(
+      `[command] Supervisor command '${command}' skipped because another lifecycle job is already in progress`,
+    );
     return;
   }
 
@@ -319,7 +343,12 @@ async function callSupervisorAddonCommand(command: "update" | "restart"): Promis
 
       const bodyText = await res.text().catch(() => "");
       const lowerText = bodyText.toLowerCase();
-      if (res.status === 409 || lowerText.includes("another job is running") || lowerText.includes("timeout") || lowerText.includes("reload request")) {
+      if (
+        res.status === 409 ||
+        lowerText.includes("another job is running") ||
+        lowerText.includes("timeout") ||
+        lowerText.includes("reload request")
+      ) {
         console.warn(`[command] Supervisor busy for '${command}': ${res.status} ${bodyText}`);
         return;
       }
@@ -486,15 +515,18 @@ db.exec(`
 `);
 
 function pruneExecutionLogs(): void {
-  db.prepare(`DELETE FROM automation_exec_log WHERE created_at < datetime('now', ?)`)
-    .run(`-${LOCAL_EXEC_LOG_RETENTION_DAYS} days`);
+  db.prepare(`DELETE FROM automation_exec_log WHERE created_at < datetime('now', ?)`).run(
+    `-${LOCAL_EXEC_LOG_RETENTION_DAYS} days`,
+  );
 
-  db.prepare(`
+  db.prepare(
+    `
     DELETE FROM automation_exec_log
     WHERE id NOT IN (
       SELECT id FROM automation_exec_log ORDER BY id DESC LIMIT ?
     )
-  `).run(LOCAL_EXEC_LOG_MAX_ROWS);
+  `,
+  ).run(LOCAL_EXEC_LOG_MAX_ROWS);
 }
 
 // ── NEW: Meter Mappings Cache (Offline-Persistent) ──
@@ -564,7 +596,7 @@ function saveRemoteConfigToCache(cfg: Record<string, unknown>, version: number):
        ON CONFLICT(cache_key) DO UPDATE SET
          config_json = excluded.config_json,
          version = excluded.version,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at`,
     ).run(JSON.stringify(cfg), version);
   } catch (err) {
     console.warn("[remote-config] cache save failed:", err);
@@ -574,17 +606,13 @@ function saveRemoteConfigToCache(cfg: Record<string, unknown>, version: number):
 /* ── Readings Buffer Statements ──────────────────────────────────────────────── */
 
 const insertReading = db.prepare(
-  `INSERT INTO readings_buffer (meter_id, tenant_id, power_value, energy_type, recorded_at, priority) VALUES (?, ?, ?, ?, ?, ?)`
+  `INSERT INTO readings_buffer (meter_id, tenant_id, power_value, energy_type, recorded_at, priority) VALUES (?, ?, ?, ?, ?, ?)`,
 );
 const fetchBatch = db.prepare(
-  `SELECT id, meter_id, tenant_id, power_value, energy_type, recorded_at FROM readings_buffer ORDER BY id LIMIT ?`
+  `SELECT id, meter_id, tenant_id, power_value, energy_type, recorded_at FROM readings_buffer ORDER BY id LIMIT ?`,
 );
-const deleteBatch = db.prepare(
-  `DELETE FROM readings_buffer WHERE id <= ?`
-);
-const countBuffer = db.prepare(
-  `SELECT COUNT(*) AS cnt FROM readings_buffer`
-);
+const deleteBatch = db.prepare(`DELETE FROM readings_buffer WHERE id <= ?`);
+const countBuffer = db.prepare(`SELECT COUNT(*) AS cnt FROM readings_buffer`);
 
 function getBufferCount(): number {
   return (countBuffer.get() as { cnt: number }).cnt;
@@ -611,23 +639,25 @@ function enforceBufferLimit(): void {
     if (stats.size > maxBytes) {
       const total = getBufferCount();
       const toDelete = Math.max(1, Math.floor(total * 0.1));
-      const oldest = db.prepare(
-        `SELECT id FROM readings_buffer WHERE priority = 0 ORDER BY id LIMIT ?`
-      ).all(toDelete) as { id: number }[];
+      const oldest = db
+        .prepare(`SELECT id FROM readings_buffer WHERE priority = 0 ORDER BY id LIMIT ?`)
+        .all(toDelete) as { id: number }[];
       if (oldest.length > 0) {
         deleteBatch.run(oldest[oldest.length - 1].id);
         console.log(`[buffer] Evicted ${oldest.length} non-priority readings (FIFO)`);
       } else {
-        const anyOldest = db.prepare(
-          `SELECT id FROM readings_buffer ORDER BY id LIMIT ?`
-        ).all(toDelete) as { id: number }[];
+        const anyOldest = db.prepare(`SELECT id FROM readings_buffer ORDER BY id LIMIT ?`).all(toDelete) as {
+          id: number;
+        }[];
         if (anyOldest.length > 0) {
           deleteBatch.run(anyOldest[anyOldest.length - 1].id);
           console.log(`[buffer] Evicted ${anyOldest.length} readings (all priority, FIFO fallback)`);
         }
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 /* ── Meter Mapping ───────────────────────────────────────────────────────────── */
@@ -658,7 +688,7 @@ function matchesEntityFilter(entityId: string): boolean {
 // ── NEW: Persist meter mappings to SQLite cache ──
 function saveMeterMappingsToCache(mappings: MeterMapping[]): void {
   const upsert = db.prepare(
-    `INSERT OR REPLACE INTO meter_mappings_cache (id, sensor_uuid, energy_type, tenant_id) VALUES (?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO meter_mappings_cache (id, sensor_uuid, energy_type, tenant_id) VALUES (?, ?, ?, ?)`,
   );
   const tx = db.transaction((items: MeterMapping[]) => {
     db.exec(`DELETE FROM meter_mappings_cache`);
@@ -692,7 +722,7 @@ async function fetchMeterMappings(): Promise<void> {
       console.error(`[mapping] Failed to fetch meters: ${res.status}`);
       return;
     }
-    const data = await res.json() as { success?: boolean; meters?: any[] };
+    const data = (await res.json()) as { success?: boolean; meters?: any[] };
     if (data.success && Array.isArray(data.meters)) {
       meterMappings = data.meters
         .filter((m: any) => m.sensor_uuid && m.capture_type === "automatic")
@@ -730,7 +760,7 @@ let latestHAStates: HAState[] = [];
 // ── NEW: Persist HA states to SQLite cache ──
 function saveHAStatesToCache(): void {
   const upsert = db.prepare(
-    `INSERT OR REPLACE INTO ha_states_cache (entity_id, state, attributes, last_updated) VALUES (?, ?, ?, ?)`
+    `INSERT OR REPLACE INTO ha_states_cache (entity_id, state, attributes, last_updated) VALUES (?, ?, ?, ?)`,
   );
   const tx = db.transaction((states: HAState[]) => {
     for (const s of states) {
@@ -739,16 +769,26 @@ function saveHAStatesToCache(): void {
   });
   // Only cache sensor/switch/light/cover states (max 500)
   const relevant = latestHAStates
-    .filter(s => s.entity_id.startsWith("sensor.") || s.entity_id.startsWith("switch.") || s.entity_id.startsWith("light.") || s.entity_id.startsWith("cover.") || s.entity_id.startsWith("climate."))
+    .filter(
+      (s) =>
+        s.entity_id.startsWith("sensor.") ||
+        s.entity_id.startsWith("switch.") ||
+        s.entity_id.startsWith("light.") ||
+        s.entity_id.startsWith("cover.") ||
+        s.entity_id.startsWith("climate."),
+    )
     .slice(0, 500);
   tx(relevant);
 }
 
 function loadHAStatesFromCache(): HAState[] {
   const rows = db.prepare(`SELECT entity_id, state, attributes, last_updated FROM ha_states_cache`).all() as Array<{
-    entity_id: string; state: string; attributes: string; last_updated: string;
+    entity_id: string;
+    state: string;
+    attributes: string;
+    last_updated: string;
   }>;
-  return rows.map(r => ({
+  return rows.map((r) => ({
     entity_id: r.entity_id,
     state: r.state,
     attributes: r.attributes ? JSON.parse(r.attributes) : {},
@@ -768,7 +808,7 @@ async function pollHAStates(): Promise<void> {
       return;
     }
 
-    const states: HAState[] = await res.json() as HAState[];
+    const states: HAState[] = (await res.json()) as HAState[];
     latestHAStates = states;
     let buffered = 0;
 
@@ -788,7 +828,7 @@ async function pollHAStates(): Promise<void> {
         value,
         mapping.energy_type,
         state.last_updated || new Date().toISOString(),
-        priority
+        priority,
       );
       buffered++;
     }
@@ -852,7 +892,9 @@ function connectHAWebSocket(): void {
             }
           }
         }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     });
 
     haWs.on("close", () => {
@@ -886,8 +928,7 @@ function getLocalAutomations(): LocalAutomation[] {
 }
 
 function updateLocalExecutionTime(id: string): void {
-  db.prepare(`UPDATE automations_local SET last_executed_at = ? WHERE id = ?`)
-    .run(new Date().toISOString(), id);
+  db.prepare(`UPDATE automations_local SET last_executed_at = ? WHERE id = ?`).run(new Date().toISOString(), id);
 }
 
 function normalizeSqliteTimestampToIso(value: string | null | undefined): string | null {
@@ -908,22 +949,30 @@ function insertExecLog(entry: {
   duration_ms?: number;
   trigger_type?: string;
 }): void {
-  db.prepare(`INSERT INTO automation_exec_log (automation_id, tenant_id, status, error_message, actions_executed, duration_ms, trigger_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(
-      entry.automation_id,
-      entry.tenant_id,
-      entry.status,
-      entry.error_message || null,
-      entry.actions_executed ? JSON.stringify(entry.actions_executed) : null,
-      entry.duration_ms || null,
-      entry.trigger_type || "scheduled",
-      new Date().toISOString()
-    );
+  db.prepare(
+    `INSERT INTO automation_exec_log (automation_id, tenant_id, status, error_message, actions_executed, duration_ms, trigger_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    entry.automation_id,
+    entry.tenant_id,
+    entry.status,
+    entry.error_message || null,
+    entry.actions_executed ? JSON.stringify(entry.actions_executed) : null,
+    entry.duration_ms || null,
+    entry.trigger_type || "scheduled",
+    new Date().toISOString(),
+  );
 
   pruneExecutionLogs();
 }
 
-function getLocalTimeParts(timezone: string): { hours: number; minutes: number; seconds: number; weekday: number; timeStr: string; totalSeconds: number } {
+function getLocalTimeParts(timezone: string): {
+  hours: number;
+  minutes: number;
+  seconds: number;
+  weekday: number;
+  timeStr: string;
+  totalSeconds: number;
+} {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat("de-DE", {
     timeZone: timezone,
@@ -1025,11 +1074,21 @@ async function evaluateAndExecuteAutomations(): Promise<void> {
             const threshold = cond.value ?? 0;
             if (isFinite(val)) {
               switch (cond.operator) {
-                case ">": result = val > threshold; break;
-                case "<": result = val < threshold; break;
-                case "=": result = Math.abs(val - threshold) < 0.001; break;
-                case ">=": result = val >= threshold; break;
-                case "<=": result = val <= threshold; break;
+                case ">":
+                  result = val > threshold;
+                  break;
+                case "<":
+                  result = val < threshold;
+                  break;
+                case "=":
+                  result = Math.abs(val - threshold) < 0.001;
+                  break;
+                case ">=":
+                  result = val >= threshold;
+                  break;
+                case "<=":
+                  result = val <= threshold;
+                  break;
               }
             }
           }
@@ -1051,9 +1110,16 @@ async function evaluateAndExecuteAutomations(): Promise<void> {
     const startTime = Date.now();
 
     try {
-      const actions = Array.isArray(rule.actions) && rule.actions.length > 0
-        ? rule.actions
-        : [{ actuator_uuid: rule.actuator_uuid, action_type: rule.action_value || "pulse", action_value: rule.action_value }];
+      const actions =
+        Array.isArray(rule.actions) && rule.actions.length > 0
+          ? rule.actions
+          : [
+              {
+                actuator_uuid: rule.actuator_uuid,
+                action_type: rule.action_value || "pulse",
+                action_value: rule.action_value,
+              },
+            ];
 
       for (const action of actions) {
         await executeWithRetry(action.actuator_uuid, action.action_value || action.action_type || "pulse");
@@ -1101,7 +1167,9 @@ async function executeWithRetry(entityId: string, cmdValue: string): Promise<voi
       return; // success
     } catch (err: any) {
       if (attempt < RETRY_MAX_ATTEMPTS) {
-        console.warn(`[auto-engine] Command for ${entityId} failed (attempt ${attempt}/${RETRY_MAX_ATTEMPTS}): ${err?.message}. Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+        console.warn(
+          `[auto-engine] Command for ${entityId} failed (attempt ${attempt}/${RETRY_MAX_ATTEMPTS}): ${err?.message}. Retrying in ${RETRY_DELAY_MS / 1000}s...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
       } else {
         throw new Error(`Command for ${entityId} failed after ${RETRY_MAX_ATTEMPTS} attempts: ${err?.message}`);
@@ -1188,12 +1256,12 @@ async function syncAutomationsFromCloud(): Promise<void> {
     }
     markCloudReachable();
 
-    const data = await res.json() as { success: boolean; automations?: any[] };
+    const data = (await res.json()) as { success: boolean; automations?: any[] };
     if (!data.success || !Array.isArray(data.automations)) return;
 
     const upsert = db.prepare(
       `INSERT OR REPLACE INTO automations_local (id, data, updated_at, last_executed_at)
-       VALUES (?, ?, ?, COALESCE((SELECT last_executed_at FROM automations_local WHERE id = ?), NULL))`
+       VALUES (?, ?, ?, COALESCE((SELECT last_executed_at FROM automations_local WHERE id = ?), NULL))`,
     );
 
     const syncTransaction = db.transaction((automations: any[]) => {
@@ -1208,7 +1276,9 @@ async function syncAutomationsFromCloud(): Promise<void> {
 
     syncTransaction(data.automations);
     lastAutomationSync = new Date().toISOString();
-    console.log(`[sync] Synced ${data.automations.length} automations from cloud (${isFullSync ? "full" : "incremental"})`);
+    console.log(
+      `[sync] Synced ${data.automations.length} automations from cloud (${isFullSync ? "full" : "incremental"})`,
+    );
 
     // Remove local automations that are no longer in the cloud.
     // Only prune on FULL sync. Important: also prune when the cloud returns
@@ -1235,9 +1305,9 @@ async function syncAutomationsFromCloud(): Promise<void> {
 async function pushExecutionLogs(): Promise<void> {
   // Always attempt – connectivity is tracked by heartbeat/sync results
 
-  const unsyncedLogs = db.prepare(
-    `SELECT * FROM automation_exec_log WHERE synced = 0 ORDER BY id LIMIT 100`
-  ).all() as Array<{
+  const unsyncedLogs = db
+    .prepare(`SELECT * FROM automation_exec_log WHERE synced = 0 ORDER BY id LIMIT 100`)
+    .all() as Array<{
     id: number;
     automation_id: string;
     tenant_id: string;
@@ -1322,7 +1392,7 @@ async function flushBuffer(): Promise<void> {
     if (res.ok) {
       const lastId = rows[rows.length - 1].id;
       deleteBatch.run(lastId);
-      const result = await res.json() as { inserted?: number };
+      const result = (await res.json()) as { inserted?: number };
       console.log(`[flush] Sent ${readings.length} readings, inserted: ${result.inserted}`);
     } else {
       console.warn(`[flush] Cloud returned ${res.status} – keeping readings in buffer`);
@@ -1343,11 +1413,36 @@ async function pushDeviceSnapshot(): Promise<void> {
 
   const actuatorDomains = new Set(["switch", "light", "cover", "climate", "fan", "lock", "valve"]);
   const ignoredDomains = new Set([
-    "automation", "script", "scene", "zone", "person", "persistent_notification",
-    "update", "button", "number", "select", "input_boolean", "input_number",
-    "input_select", "input_text", "input_datetime", "timer", "counter", "schedule",
-    "todo", "conversation", "tts", "stt", "wake_word", "calendar", "device_tracker",
-    "media_player", "camera", "weather", "sun", "moon",
+    "automation",
+    "script",
+    "scene",
+    "zone",
+    "person",
+    "persistent_notification",
+    "update",
+    "button",
+    "number",
+    "select",
+    "input_boolean",
+    "input_number",
+    "input_select",
+    "input_text",
+    "input_datetime",
+    "timer",
+    "counter",
+    "schedule",
+    "todo",
+    "conversation",
+    "tts",
+    "stt",
+    "wake_word",
+    "calendar",
+    "device_tracker",
+    "media_player",
+    "camera",
+    "weather",
+    "sun",
+    "moon",
   ]);
 
   const domainCounts: Record<string, number> = {};
@@ -1389,8 +1484,8 @@ async function pushDeviceSnapshot(): Promise<void> {
 
   console.log(
     `[snapshot] inventory analysis: ha_states=${latestHAStates.length} ignored=${ignoredCount} ` +
-    `meters=${categoryCounts.meter} actuators=${categoryCounts.actuator} sensors=${categoryCounts.sensor} ` +
-    `domains=${JSON.stringify(domainCounts)}`,
+      `meters=${categoryCounts.meter} actuators=${categoryCounts.actuator} sensors=${categoryCounts.sensor} ` +
+      `domains=${JSON.stringify(domainCounts)}`,
   );
   if (devices.length > 0) {
     const sample = devices.slice(0, 20).map((d) => `${d.entity_id}[${d.category}]`);
@@ -1411,12 +1506,16 @@ async function pushDeviceSnapshot(): Promise<void> {
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      console.warn(`[snapshot] device-snapshot returned ${res.status} body=${errText.slice(0, 300)} sent_devices=${devices.length}`);
+      console.warn(
+        `[snapshot] device-snapshot returned ${res.status} body=${errText.slice(0, 300)} sent_devices=${devices.length}`,
+      );
       return;
     }
-    const data = await res.json() as { success?: boolean; upserted?: number; pruned?: number };
+    const data = (await res.json()) as { success?: boolean; upserted?: number; pruned?: number };
     if (data.success) {
-      console.log(`[snapshot] pushed ${devices.length} devices (upserted=${data.upserted ?? 0}, pruned=${data.pruned ?? 0})`);
+      console.log(
+        `[snapshot] pushed ${devices.length} devices (upserted=${data.upserted ?? 0}, pruned=${data.pruned ?? 0})`,
+      );
     }
   } catch (err) {
     console.warn("[snapshot] failed:", err);
@@ -1431,14 +1530,15 @@ async function fetchHAVersion(): Promise<void> {
       headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
     });
     if (res.ok) {
-      const data = await res.json() as { version?: string };
+      const data = (await res.json()) as { version?: string };
       haVersion = data.version || "unknown";
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 // (Legacy HTTP-Heartbeat in v3.0 entfernt – ersetzt durch sendCloudHeartbeat() via WSS.)
-
 
 /* ── Cloud WebSocket Client (gateway-ws) ─────────────────────────────────────── */
 /**
@@ -1467,19 +1567,26 @@ let cloudWsAssignment: {
 } = {};
 
 function loadGatewayAssignmentFromCache(): typeof cloudWsAssignment & { assignment_status?: string } {
-  return (db.prepare(`
+  return (
+    (db
+      .prepare(
+        `
     SELECT device_id, tenant_id, tenant_name, location_id, location_name, location_integration_id, assignment_status
     FROM gateway_assignment_cache
     WHERE cache_key = 'primary'
     LIMIT 1
-  `).get() as (typeof cloudWsAssignment & { assignment_status?: string }) | undefined) || {};
+  `,
+      )
+      .get() as (typeof cloudWsAssignment & { assignment_status?: string }) | undefined) || {}
+  );
 }
 
 function saveGatewayAssignmentToCache(
   assignment: typeof cloudWsAssignment,
   assignmentStatus: "assigned" | "pending_assignment" | "unknown",
 ): void {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO gateway_assignment_cache (
       cache_key, device_id, tenant_id, tenant_name, location_id, location_name, location_integration_id, assignment_status, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -1492,8 +1599,9 @@ function saveGatewayAssignmentToCache(
       location_integration_id = excluded.location_integration_id,
       assignment_status = excluded.assignment_status,
       updated_at = datetime('now')
-  `).run(
-    'primary',
+  `,
+  ).run(
+    "primary",
     assignment.device_id || null,
     assignment.tenant_id || null,
     assignment.tenant_name || null,
@@ -1506,7 +1614,11 @@ function saveGatewayAssignmentToCache(
 
 function safeWsSend(ws: import("ws") | null, msg: unknown): void {
   if (!ws || ws.readyState !== 1 /* OPEN */) return;
-  try { ws.send(JSON.stringify(msg)); } catch { /* ignore */ }
+  try {
+    ws.send(JSON.stringify(msg));
+  } catch {
+    /* ignore */
+  }
 }
 
 async function sendCloudHeartbeat(): Promise<void> {
@@ -1563,7 +1675,11 @@ async function connectCloudWebSocket(): Promise<void> {
 
   cloudWs.on("message", async (data: Buffer) => {
     let msg: any;
-    try { msg = JSON.parse(data.toString()); } catch { return; }
+    try {
+      msg = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
 
     switch (msg?.type) {
       case "auth_ok": {
@@ -1577,11 +1693,12 @@ async function connectCloudWebSocket(): Promise<void> {
           location_name: msg.location_name,
           location_integration_id: msg.location_integration_id,
         };
-        currentAssignmentStatus = msg.tenant_id && (msg.location_id || msg.location_name || msg.location_integration_id)
-          ? "assigned"
-          : msg.tenant_id
-            ? "pending_assignment"
-            : "unknown";
+        currentAssignmentStatus =
+          msg.tenant_id && (msg.location_id || msg.location_name || msg.location_integration_id)
+            ? "assigned"
+            : msg.tenant_id
+              ? "pending_assignment"
+              : "unknown";
         saveGatewayAssignmentToCache(cloudWsAssignment, currentAssignmentStatus);
         markCloudReachable();
         console.log(`[cloud-ws] Authenticated. device=${msg.device_id} tenant=${msg.tenant_id || "(none)"}`);
@@ -1596,7 +1713,11 @@ async function connectCloudWebSocket(): Promise<void> {
         console.error(`[cloud-ws] Auth failed: ${msg.error}`);
         // Bei Auth-Fehlern langsamer reconnecten (kein Brute-Force)
         cloudWsReconnectDelay = 60_000;
-        try { cloudWs?.close(); } catch { /* ignore */ }
+        try {
+          cloudWs?.close();
+        } catch {
+          /* ignore */
+        }
         break;
       }
       case "pong":
@@ -1609,7 +1730,9 @@ async function connectCloudWebSocket(): Promise<void> {
         applyRemoteConfig(msg.config || {}, v);
         try {
           safeWsSend(cloudWs, { type: "config_ack", version: v });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         break;
       }
       case "command": {
@@ -1684,13 +1807,13 @@ async function handleCloudCommand(cmdType: string, payload: Record<string, unkno
     case "set_ui_pin": {
       // Cloud kann den UI-PIN-Hash live aktualisieren
       const hash = payload.ui_pin_hash;
-      uiPinHash = (typeof hash === "string" && hash.length > 0) ? hash : null;
+      uiPinHash = typeof hash === "string" && hash.length > 0 ? hash : null;
       console.log(`[cloud-ws] UI PIN ${uiPinHash ? "updated" : "cleared"}`);
       return { ok: true };
     }
     case "discover_devices": {
       // Phase 3: Cloud bittet uns einen Discovery-Lauf zu fahren.
-      const methods = Array.isArray(payload.methods) ? payload.methods as string[] : ["mdns", "mqtt"];
+      const methods = Array.isArray(payload.methods) ? (payload.methods as string[]) : ["mdns", "mqtt"];
       const found = await runDeviceDiscovery(methods, payload.modbus as any);
       await pushDiscoveriesToCloud(found);
       return { ok: true, count: found.length, methods };
@@ -1789,13 +1912,17 @@ async function runUpdateJob(jobId: string, imageRef: string, targetVersion: stri
 
 function persistPendingUpdateJob(jobId: string, targetVersion: string): void {
   try {
-    db.prepare(`CREATE TABLE IF NOT EXISTS pending_update_jobs (
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS pending_update_jobs (
       job_id TEXT PRIMARY KEY,
       target_version TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`).run();
-    db.prepare(`INSERT OR REPLACE INTO pending_update_jobs (job_id, target_version) VALUES (?, ?)`)
-      .run(jobId, targetVersion);
+    )`,
+    ).run();
+    db.prepare(`INSERT OR REPLACE INTO pending_update_jobs (job_id, target_version) VALUES (?, ?)`).run(
+      jobId,
+      targetVersion,
+    );
   } catch (err) {
     console.warn("[update] persist failed:", (err as Error).message);
   }
@@ -1803,16 +1930,24 @@ function persistPendingUpdateJob(jobId: string, targetVersion: string): void {
 
 function reportPostBootUpdateResult(): void {
   try {
-    db.prepare(`CREATE TABLE IF NOT EXISTS pending_update_jobs (
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS pending_update_jobs (
       job_id TEXT PRIMARY KEY,
       target_version TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`).run();
-    const rows = db.prepare(`SELECT job_id, target_version FROM pending_update_jobs`).all() as Array<{ job_id: string; target_version: string }>;
+    )`,
+    ).run();
+    const rows = db.prepare(`SELECT job_id, target_version FROM pending_update_jobs`).all() as Array<{
+      job_id: string;
+      target_version: string;
+    }>;
     for (const row of rows) {
       const ok = ADDON_VERSION === row.target_version;
       const send = () => {
-        if (!cloudWsConnected) { setTimeout(send, 2000); return; }
+        if (!cloudWsConnected) {
+          setTimeout(send, 2000);
+          return;
+        }
         reportUpdateProgress(row.job_id, ok ? "success" : "failed", {
           installed_version: ADDON_VERSION,
           log: ok
@@ -1820,7 +1955,11 @@ function reportPostBootUpdateResult(): void {
             : `Update mismatch: expected ${row.target_version}, running ${ADDON_VERSION}`,
           error: ok ? undefined : `version mismatch (running ${ADDON_VERSION})`,
         });
-        try { db.prepare(`DELETE FROM pending_update_jobs WHERE job_id = ?`).run(row.job_id); } catch { /* ignore */ }
+        try {
+          db.prepare(`DELETE FROM pending_update_jobs WHERE job_id = ?`).run(row.job_id);
+        } catch {
+          /* ignore */
+        }
       };
       send();
     }
@@ -1920,9 +2059,7 @@ function guessIntegrationFromEntity(entityId: string, state: any): string | null
 
 function isEntityMapped(entityId: string): boolean {
   try {
-    return meterMappings.some((m: any) =>
-      m.ha_entity_id === entityId || m.sensor_uuid === entityId,
-    );
+    return meterMappings.some((m: any) => m.ha_entity_id === entityId || m.sensor_uuid === entityId);
   } catch {
     return false;
   }
@@ -1941,7 +2078,10 @@ async function probeModbusUnit(host: string, port: number, _unit: number): Promi
         resolve(true);
       });
       sock.on("error", () => resolve(false));
-      sock.on("timeout", () => { sock.destroy(); resolve(false); });
+      sock.on("timeout", () => {
+        sock.destroy();
+        resolve(false);
+      });
     } catch {
       resolve(false);
     }
@@ -2000,18 +2140,22 @@ async function deprovisionEntity(payload: { entity_id: string; integration_type:
 
 function saveLocalIntegrationConfig(entityId: string, config: Record<string, unknown>): void {
   try {
-    db.prepare(`
+    db.prepare(
+      `
       CREATE TABLE IF NOT EXISTS gateway_local_integrations (
         entity_id TEXT PRIMARY KEY,
         config_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       INSERT INTO gateway_local_integrations (entity_id, config_json, updated_at)
       VALUES (?, ?, ?)
       ON CONFLICT(entity_id) DO UPDATE SET config_json = excluded.config_json, updated_at = excluded.updated_at
-    `).run(entityId, JSON.stringify(config), Date.now());
+    `,
+    ).run(entityId, JSON.stringify(config), Date.now());
   } catch (err) {
     console.warn("[provision] local persist failed:", (err as Error).message);
   }
@@ -2020,7 +2164,9 @@ function saveLocalIntegrationConfig(entityId: string, config: Record<string, unk
 function removeLocalIntegrationConfig(entityId: string): void {
   try {
     db.prepare(`DELETE FROM gateway_local_integrations WHERE entity_id = ?`).run(entityId);
-  } catch { /* table may not exist yet */ }
+  } catch {
+    /* table may not exist yet */
+  }
 }
 
 async function reportProvisionStatus(entityId: string, result: { ok: boolean; error?: string }) {
@@ -2033,7 +2179,9 @@ async function reportProvisionStatus(entityId: string, result: { ok: boolean; er
       ok: result.ok,
       error: result.error || null,
     });
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 let cachedHostIPAt = 0;
@@ -2044,7 +2192,10 @@ let cachedHostMACAt = 0;
 const HOST_MAC_TTL_MS = 60 * 60 * 1000; // 1h – MAC is effectively static
 
 function normalizeMac(mac: string): string {
-  return mac.toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 12);
+  return mac
+    .toLowerCase()
+    .replace(/[^0-9a-f]/g, "")
+    .slice(0, 12);
 }
 
 async function getHostMAC(): Promise<string> {
@@ -2059,7 +2210,7 @@ async function getHostMAC(): Promise<string> {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = (await res.json()) as any;
         const ifaces = data?.data?.interfaces;
         if (Array.isArray(ifaces)) {
           // Prefer enabled ethernet
@@ -2076,19 +2227,29 @@ async function getHostMAC(): Promise<string> {
           for (const it of ifaces) {
             if (it.enabled && it.type === "ethernet") {
               const m = pickMac(it);
-              if (m) { cachedHostMAC = m; cachedHostMACAt = Date.now(); return m; }
+              if (m) {
+                cachedHostMAC = m;
+                cachedHostMACAt = Date.now();
+                return m;
+              }
             }
           }
           for (const it of ifaces) {
             if (it.enabled) {
               const m = pickMac(it);
-              if (m) { cachedHostMAC = m; cachedHostMACAt = Date.now(); return m; }
+              if (m) {
+                cachedHostMAC = m;
+                cachedHostMACAt = Date.now();
+                return m;
+              }
             }
           }
         }
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   // 2) os.networkInterfaces fallback (container MAC – not ideal but stable)
   try {
     const os = require("os");
@@ -2097,11 +2258,17 @@ async function getHostMAC(): Promise<string> {
       for (const iface of interfaces[name] || []) {
         if (iface.family === "IPv4" && !iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
           const m = normalizeMac(iface.mac);
-          if (m.length === 12) { cachedHostMAC = m; cachedHostMACAt = Date.now(); return m; }
+          if (m.length === 12) {
+            cachedHostMAC = m;
+            cachedHostMACAt = Date.now();
+            return m;
+          }
         }
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return "";
 }
 
@@ -2123,7 +2290,7 @@ async function getLocalIP(): Promise<string> {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = (await res.json()) as any;
         const ifaces = data?.data?.interfaces;
         if (Array.isArray(ifaces)) {
           for (const iface of ifaces) {
@@ -2151,7 +2318,9 @@ async function getLocalIP(): Promise<string> {
         }
       }
     }
-  } catch { /* Supervisor API not available */ }
+  } catch {
+    /* Supervisor API not available */
+  }
 
   // Final fallback: container IP via os.networkInterfaces()
   try {
@@ -2162,7 +2331,9 @@ async function getLocalIP(): Promise<string> {
         if (iface.family === "IPv4" && !iface.internal) return iface.address;
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return "unknown";
 }
 
@@ -2298,7 +2469,9 @@ function startServer(): Promise<void> {
     // ── PIN Auth endpoint (always accessible) ──
     if (pathname === "/api/auth" && req.method === "POST") {
       let body = "";
-      req.on("data", (chunk: string) => { body += chunk; });
+      req.on("data", (chunk: string) => {
+        body += chunk;
+      });
       req.on("end", () => {
         try {
           const { pin } = JSON.parse(body);
@@ -2376,40 +2549,46 @@ function startServer(): Promise<void> {
       // and Ingress healthcheck must get an instant 200 even if Cloud/HA are down.
       const mac = cachedHostMAC || "";
       // Refresh MAC in background for next call
-      if (!cachedHostMAC) { getHostMAC().catch(() => {}); }
+      if (!cachedHostMAC) {
+        getHostMAC().catch(() => {});
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        status: "running",
-        addon_version: ADDON_VERSION,
-        ha_version: haVersion,
-        buffer_count: getBufferCount(),
-        meter_mappings: meterMappings.length,
-        automation_count: getLocalAutomations().length,
-        uptime_seconds: Math.floor(process.uptime()),
-        cloud_reachable: isCloudReachable,
-        ha_ws_connected: haWsConnected,
-        mac_address: mac,
-        gateway_username: config.gateway_username || "",
-        assignment_status: currentAssignmentStatus,
-        credentials_configured: !!(config.gateway_username && config.gateway_password),
-        cloud_ws_connected: cloudWsConnected,
-        cloud_ws_device_id: cloudWsAssignment.device_id || null,
-        cloud_ws_tenant_id: cloudWsAssignment.tenant_id || config.tenant_id || null,
-        cloud_ws_tenant_name: cloudWsAssignment.tenant_name || null,
-        cloud_ws_location_id: cloudWsAssignment.location_id || null,
-        cloud_ws_location_name: cloudWsAssignment.location_name || null,
-      }));
+      res.end(
+        JSON.stringify({
+          status: "running",
+          addon_version: ADDON_VERSION,
+          ha_version: haVersion,
+          buffer_count: getBufferCount(),
+          meter_mappings: meterMappings.length,
+          automation_count: getLocalAutomations().length,
+          uptime_seconds: Math.floor(process.uptime()),
+          cloud_reachable: isCloudReachable,
+          ha_ws_connected: haWsConnected,
+          mac_address: mac,
+          gateway_username: config.gateway_username || "",
+          assignment_status: currentAssignmentStatus,
+          credentials_configured: !!(config.gateway_username && config.gateway_password),
+          cloud_ws_connected: cloudWsConnected,
+          cloud_ws_device_id: cloudWsAssignment.device_id || null,
+          cloud_ws_tenant_id: cloudWsAssignment.tenant_id || config.tenant_id || null,
+          cloud_ws_tenant_name: cloudWsAssignment.tenant_name || null,
+          cloud_ws_location_id: cloudWsAssignment.location_id || null,
+          cloud_ws_location_name: cloudWsAssignment.location_name || null,
+        }),
+      );
       return;
     }
 
     if (pathname === "/api/config") {
       res.writeHead(200, { "Content-Type": "application/json" });
       const { tenant_id, ...restConfig } = config;
-      res.end(JSON.stringify({
-        ...restConfig,
-        gateway_api_key: "[redacted]",
-        tenant_id_legacy: tenant_id || null,
-      }));
+      res.end(
+        JSON.stringify({
+          ...restConfig,
+          gateway_api_key: "[redacted]",
+          tenant_id_legacy: tenant_id || null,
+        }),
+      );
       return;
     }
 
@@ -2439,7 +2618,13 @@ function startServer(): Promise<void> {
     // ── NEW: Controllable entities (switches, lights, covers) ──
     if (pathname === "/api/actuators") {
       const actuators = latestHAStates
-        .filter((s) => s.entity_id.startsWith("switch.") || s.entity_id.startsWith("light.") || s.entity_id.startsWith("cover.") || s.entity_id.startsWith("climate."))
+        .filter(
+          (s) =>
+            s.entity_id.startsWith("switch.") ||
+            s.entity_id.startsWith("light.") ||
+            s.entity_id.startsWith("cover.") ||
+            s.entity_id.startsWith("climate."),
+        )
         .map((s) => ({
           entity_id: s.entity_id,
           state: s.state,
@@ -2458,9 +2643,49 @@ function startServer(): Promise<void> {
     if (pathname === "/api/devices") {
       const actuatorDomains = new Set(["switch", "light", "cover", "climate", "fan", "lock", "valve"]);
       const meterDomains = new Set(["sensor"]);
-      const ignoredDomains = new Set(["automation", "script", "scene", "zone", "person", "persistent_notification", "update", "button", "number", "select", "input_boolean", "input_number", "input_select", "input_text", "input_datetime", "timer", "counter", "schedule", "todo", "conversation", "tts", "stt", "wake_word", "calendar", "device_tracker", "media_player", "camera", "weather", "sun", "moon"]);
+      const ignoredDomains = new Set([
+        "automation",
+        "script",
+        "scene",
+        "zone",
+        "person",
+        "persistent_notification",
+        "update",
+        "button",
+        "number",
+        "select",
+        "input_boolean",
+        "input_number",
+        "input_select",
+        "input_text",
+        "input_datetime",
+        "timer",
+        "counter",
+        "schedule",
+        "todo",
+        "conversation",
+        "tts",
+        "stt",
+        "wake_word",
+        "calendar",
+        "device_tracker",
+        "media_player",
+        "camera",
+        "weather",
+        "sun",
+        "moon",
+      ]);
 
-      const devices: { entity_id: string; state: string; domain: string; friendly_name: string; unit: string; device_class: string; last_updated: string; category: string }[] = [];
+      const devices: {
+        entity_id: string;
+        state: string;
+        domain: string;
+        friendly_name: string;
+        unit: string;
+        device_class: string;
+        last_updated: string;
+        category: string;
+      }[] = [];
 
       for (const s of latestHAStates) {
         const domain = s.entity_id.split(".")[0];
@@ -2505,7 +2730,9 @@ function startServer(): Promise<void> {
     // ── NEW: Execute HA service (local actuator control) ──
     if (pathname === "/api/execute" && req.method === "POST") {
       let body = "";
-      req.on("data", (chunk) => { body += chunk; });
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
       req.on("end", async () => {
         try {
           const { entity_id, service } = JSON.parse(body);
@@ -2528,7 +2755,11 @@ function startServer(): Promise<void> {
     if (pathname === "/api/automations") {
       const automations = getLocalAutomations().map((a) => {
         let rule: any = {};
-        try { rule = JSON.parse(a.data); } catch { /* ignore */ }
+        try {
+          rule = JSON.parse(a.data);
+        } catch {
+          /* ignore */
+        }
         return {
           id: a.id,
           name: rule.name || "Unnamed",
@@ -2554,10 +2785,12 @@ function startServer(): Promise<void> {
 
     if (pathname === "/api/logs") {
       const limit = parseInt(url.searchParams.get("limit") || "50", 10);
-      const logs = db.prepare(
-        `SELECT automation_id, tenant_id, status, error_message, duration_ms, trigger_type, created_at
-         FROM automation_exec_log ORDER BY id DESC LIMIT ?`
-      ).all(Math.min(limit, 200)) as Array<{
+      const logs = db
+        .prepare(
+          `SELECT automation_id, tenant_id, status, error_message, duration_ms, trigger_type, created_at
+         FROM automation_exec_log ORDER BY id DESC LIMIT ?`,
+        )
+        .all(Math.min(limit, 200)) as Array<{
         automation_id: string;
         tenant_id: string;
         status: string;
@@ -2567,7 +2800,10 @@ function startServer(): Promise<void> {
         created_at: string;
       }>;
 
-      const automationRows = db.prepare(`SELECT id, data FROM automations_local`).all() as Array<{ id: string; data: string }>;
+      const automationRows = db.prepare(`SELECT id, data FROM automations_local`).all() as Array<{
+        id: string;
+        data: string;
+      }>;
       const automationNameById = new Map<string, string>();
       for (const row of automationRows) {
         try {
@@ -2590,13 +2826,15 @@ function startServer(): Promise<void> {
     }
 
     if (pathname === "/api/backup" && req.method === "POST") {
-      sendBackup().then(() => {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true }));
-      }).catch(() => {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Backup failed" }));
-      });
+      sendBackup()
+        .then(() => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+        })
+        .catch(() => {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Backup failed" }));
+        });
       return;
     }
 
@@ -2662,7 +2900,9 @@ async function main(): Promise<void> {
   // Captive setup hint – no longer hijacks port 8099. The main server already
   // owns the port; the UI surfaces /setup based on /api/status.
   if (!config.gateway_username || !config.gateway_password) {
-    console.warn("[boot] Keine Gateway-Credentials konfiguriert – Pairing über UI erforderlich. /api/status meldet credentials_configured=false.");
+    console.warn(
+      "[boot] Keine Gateway-Credentials konfiguriert – Pairing über UI erforderlich. /api/status meldet credentials_configured=false.",
+    );
   }
 
   console.log(`  Device:     ${config.device_name}`);
@@ -2696,8 +2936,12 @@ async function main(): Promise<void> {
       location_name: cachedAssignment.location_name,
       location_integration_id: cachedAssignment.location_integration_id,
     };
-    currentAssignmentStatus = (cachedAssignment.assignment_status as typeof currentAssignmentStatus) || (cachedAssignment.location_name ? "assigned" : "unknown");
-    console.log(`[offline] Loaded cached gateway assignment: ${cachedAssignment.location_name || cachedAssignment.tenant_name || 'unknown'}`);
+    currentAssignmentStatus =
+      (cachedAssignment.assignment_status as typeof currentAssignmentStatus) ||
+      (cachedAssignment.location_name ? "assigned" : "unknown");
+    console.log(
+      `[offline] Loaded cached gateway assignment: ${cachedAssignment.location_name || cachedAssignment.tenant_name || "unknown"}`,
+    );
   }
 
   const cachedRemote = loadRemoteConfigFromCache();
@@ -2708,12 +2952,32 @@ async function main(): Promise<void> {
 
   // PHASE 3 – Initial cloud/HA bootstrap runs in background. Failures only log.
   void (async () => {
-    try { await checkCloudConnectivity(); } catch (e) { console.warn("[boot] cloud check failed:", (e as Error).message); }
-    try { await fetchHAVersion(); } catch (e) { console.warn("[boot] HA version failed:", (e as Error).message); }
-    try { await fetchMeterMappings(); } catch (e) { console.warn("[boot] meter mappings failed:", (e as Error).message); }
-    try { await syncAutomationsFromCloud(); } catch (e) { console.warn("[boot] automation sync failed:", (e as Error).message); }
+    try {
+      await checkCloudConnectivity();
+    } catch (e) {
+      console.warn("[boot] cloud check failed:", (e as Error).message);
+    }
+    try {
+      await fetchHAVersion();
+    } catch (e) {
+      console.warn("[boot] HA version failed:", (e as Error).message);
+    }
+    try {
+      await fetchMeterMappings();
+    } catch (e) {
+      console.warn("[boot] meter mappings failed:", (e as Error).message);
+    }
+    try {
+      await syncAutomationsFromCloud();
+    } catch (e) {
+      console.warn("[boot] automation sync failed:", (e as Error).message);
+    }
     // Warm MAC cache for /api/status
-    try { await getHostMAC(); } catch { /* ignore */ }
+    try {
+      await getHostMAC();
+    } catch {
+      /* ignore */
+    }
   })();
 
   // Connect HA WebSocket for live sensor updates
@@ -2750,10 +3014,13 @@ async function main(): Promise<void> {
   workerTimers.automation = setInterval(() => evaluateAndExecuteAutomations(), config.automation_eval_seconds * 1000);
 
   // Sync automations from cloud every 5 minutes
-  workerTimers.syncAutomations = setInterval(async () => {
-    await syncAutomationsFromCloud();
-    await pushExecutionLogs();
-  }, 5 * 60 * 1000);
+  workerTimers.syncAutomations = setInterval(
+    async () => {
+      await syncAutomationsFromCloud();
+      await pushExecutionLogs();
+    },
+    5 * 60 * 1000,
+  );
 
   // Refresh meter mappings every 5 minutes
   workerTimers.meterMappings = setInterval(() => fetchMeterMappings(), 5 * 60 * 1000);
