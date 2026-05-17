@@ -2265,7 +2265,19 @@ function startServer() {
             res.end(JSON.stringify({ success: true, devices: grouped, total: devices.length }));
             return;
         }
-        // ── NEW: Execute HA service (local actuator control) ──
+        // ── Wallbox-Bridges (Modbus-TCP ↔ OCPP) ──
+        if (pathname === "/api/wallboxes") {
+            let wallboxes = [];
+            try {
+                wallboxes = wallboxManager ? wallboxManager.listDetails() : [];
+            }
+            catch (e) {
+                console.warn("[api] /api/wallboxes failed:", e.message);
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ success: true, wallboxes }));
+            return;
+        }
         if (pathname === "/api/execute" && req.method === "POST") {
             let body = "";
             req.on("data", (chunk) => { body += chunk; });
